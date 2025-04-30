@@ -11,7 +11,6 @@ import {
 	PublicKey,
 	Signer,
 	SimulateTransactionConfig,
-	Transaction,
 	TransactionError,
 	TransactionInstruction,
 	TransactionMessage,
@@ -45,9 +44,7 @@ export async function getRecentPriorityFee(
 	maxFeeCap: BigNumber,
 ) {
 	const lockedWritableAccounts = [
-		...new Set(
-			instructions.flatMap((ix) => [...ix.keys.map((key) => key.pubkey), ix.programId]),
-		),
+		...new Set(instructions.flatMap((ix) => [...ix.keys.map((key) => key.pubkey), ix.programId])),
 	];
 
 	const recentPrioritizationFees = await connection.getRecentPrioritizationFees({
@@ -101,6 +98,10 @@ export async function getRecentPriorityFee(
 	return fee;
 }
 
+export type SignTransactionFunction = <T extends web3.Transaction | web3.VersionedTransaction>(
+	transaction: T,
+) => Promise<T>;
+
 /**
  * A executable payload that holds transaction
  */
@@ -122,9 +123,7 @@ export class TransactionPayload {
 		readonly feePayer: PublicKey,
 		readonly signers?: Signer[],
 		readonly addressLookupTableAccounts?: AddressLookupTableAccount[],
-		private readonly _signTransaction?: <T extends Transaction | VersionedTransaction>(
-			transaction: T,
-		) => Promise<T>,
+		private readonly _signTransaction?: SignTransactionFunction,
 	) {}
 
 	async simulate(options?: SimulateTransactionConfig) {
@@ -165,7 +164,8 @@ export class TransactionPayload {
 
 	/**
 	 * Signs, send and confim transaction
-	 * * `Note`: requires signTransaction while creating instance of this object.
+	 *
+	 * `Note`: requires signTransaction while creating instance of this object.
 	 * @param options solana confirm options
 	 * @returns
 	 */
@@ -194,21 +194,17 @@ export class TransactionPayload {
 		const hasComputeUnitLimitInstruction = this.instructions.some(
 			(instruction) =>
 				instruction.programId.equals(ComputeBudgetProgram.programId) &&
-				ComputeBudgetInstruction.decodeInstructionType(instruction) ===
-					"SetComputeUnitLimit",
+				ComputeBudgetInstruction.decodeInstructionType(instruction) === "SetComputeUnitLimit",
 		);
 
 		const hasComputerUnitPriceInstruction = this.instructions.some(
 			(instruction) =>
 				instruction.programId.equals(ComputeBudgetProgram.programId) &&
-				ComputeBudgetInstruction.decodeInstructionType(instruction) ===
-					"SetComputeUnitPrice",
+				ComputeBudgetInstruction.decodeInstructionType(instruction) === "SetComputeUnitPrice",
 		);
 
 		if (!hasComputeUnitLimitInstruction) {
-			this.instructions.unshift(
-				ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnit }),
-			);
+			this.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnit }));
 		}
 
 		if (!hasComputerUnitPriceInstruction) {
@@ -242,9 +238,7 @@ export class TransactionPayload {
 				);
 				// console.log("priority fee per cu:", priorityFeePerCU.toFixed());
 
-				priorityFeeInMicroLamports = BigInt(
-					priorityFeePerCU.toFixed(0, BigNumber.ROUND_DOWN),
-				);
+				priorityFeeInMicroLamports = BigInt(priorityFeePerCU.toFixed(0, BigNumber.ROUND_DOWN));
 			} else {
 				priorityFeeInMicroLamports = BigInt(
 					exactPriorityFeeSol
@@ -263,8 +257,7 @@ export class TransactionPayload {
 			);
 		}
 
-		const { lastValidBlockHeight, blockhash } =
-			await this._connection.getLatestBlockhash(options);
+		const { lastValidBlockHeight, blockhash } = await this._connection.getLatestBlockhash(options);
 
 		const message = new TransactionMessage({
 			instructions: this.instructions,
@@ -299,25 +292,16 @@ export class TransactionPayload {
 					? options.maxSendTransactionRetries
 					: Number.MAX_SAFE_INTEGER;
 
-				while (
-					!confirmed &&
-					blockheight < lastValidBlockHeight &&
-					retry < sendTransactionRetry
-				) {
+				while (!confirmed && blockheight < lastValidBlockHeight && retry < sendTransactionRetry) {
 					try {
-						await this._connection.sendRawTransaction(
-							signedTransaction.serialize(),
-							options,
-						);
+						await this._connection.sendRawTransaction(signedTransaction.serialize(), options);
 						console.debug("Signatue sent: %s at %d", signature, Date.now());
 						retry += 1;
 						await sleep(sendTransactionInterval);
 						blockheight = await this._connection.getBlockHeight(options);
 					} catch (err: any) {
 						if (err.message) {
-							if (
-								err.message.includes("This transaction has already been processed")
-							) {
+							if (err.message.includes("This transaction has already been processed")) {
 								return;
 							} else if (err.message.includes("Blockhash not found")) {
 								console.debug("Expected error: ", err.message);
