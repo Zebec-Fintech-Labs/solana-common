@@ -1,0 +1,32 @@
+{
+  "name": "@zebec-network/solana-common",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "license": "MIT",
+  "author": "Ashish Sapkota",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "npm run clean && tsc",
+    "clean": "rimraf ./dist",
+    "format": "prettier --write .",
+    "start": "ts-node src/index.ts",
+    "test": "ts-mocha -p ./tsconfig.json -t 1000000"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.15.3",
+    "mocha": "^11.1.0",
+    "prettier": "^3.5.3",
+    "rimraf": "^6.0.1",
+    "ts-mocha": "^11.1.0",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.29.0",
+    "@zebec-network/core-utils": "^1.0.2",
+    "bignumber.js": "^9.3.0"
+  }
+}
