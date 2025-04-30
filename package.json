@@ -28,5 +28,10 @@
     "@coral-xyz/anchor": "^0.29.0",
     "@zebec-network/core-utils": "^1.0.2",
     "bignumber.js": "^9.3.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zebec-Fintech-Labs/solana-common.git"
+  },
+  "homepage": "https://github.com/Zebec-Fintech-Labs/solana-common#README"
 }
