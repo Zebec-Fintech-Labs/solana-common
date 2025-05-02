@@ -1,4 +1,4 @@
-import BigNumber from "bignumber.js";
+import { BigNumber } from "bignumber.js";
 
 import { translateError, utils, web3 } from "@coral-xyz/anchor";
 import {
@@ -17,7 +17,6 @@ import {
 	TransactionSignature,
 	VersionedTransaction,
 } from "@solana/web3.js";
-import { sleep } from "@zebec-network/core-utils";
 
 /**
  * In millisecond
@@ -96,6 +95,10 @@ export async function getRecentPriorityFee(
 	const fee = BigNumber.min(calculatedFee, maxFeeCap);
 
 	return fee;
+}
+
+function sleep(durationInMs: number) {
+	return new Promise((r) => setTimeout(r, durationInMs));
 }
 
 export type SignTransactionFunction = <T extends web3.Transaction | web3.VersionedTransaction>(
