@@ -1,3 +1,5 @@
+import { BigNumber } from "bignumber.js";
+
 import { utils, web3 } from "@coral-xyz/anchor";
 
 const mintToDecimalsMap = new Map<string, number>();
