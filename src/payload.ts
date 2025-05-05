@@ -1,22 +1,6 @@
 import { BigNumber } from "bignumber.js";
 
 import { translateError, utils, web3 } from "@coral-xyz/anchor";
-import {
-	AddressLookupTableAccount,
-	ComputeBudgetInstruction,
-	ComputeBudgetProgram,
-	ConfirmOptions,
-	Connection,
-	LAMPORTS_PER_SOL,
-	PublicKey,
-	Signer,
-	SimulateTransactionConfig,
-	TransactionError,
-	TransactionInstruction,
-	TransactionMessage,
-	TransactionSignature,
-	VersionedTransaction,
-} from "@solana/web3.js";
 
 /**
  * In millisecond
@@ -120,29 +104,29 @@ export class TransactionPayload {
 	 * @param _signTransaction function that signs and return signed transaction. Transaction build from the instructions is passed to this function
 	 */
 	constructor(
-		private readonly _connection: Connection,
+		private readonly _connection: web3.Connection,
 		private readonly _errors: Map<number, string>,
-		readonly instructions: TransactionInstruction[],
-		readonly feePayer: PublicKey,
-		readonly signers?: Signer[],
-		readonly addressLookupTableAccounts?: AddressLookupTableAccount[],
+		readonly instructions: web3.TransactionInstruction[],
+		readonly feePayer: web3.PublicKey,
+		readonly signers?: web3.Signer[],
+		readonly addressLookupTableAccounts?: web3.AddressLookupTableAccount[],
 		private readonly _signTransaction?: SignTransactionFunction,
 	) {}
 
-	async simulate(options?: SimulateTransactionConfig) {
+	async simulate(options?: web3.SimulateTransactionConfig) {
 		if (!this._signTransaction) {
 			throw new Error("signTransaction is required to execute transaction payload.");
 		}
 
 		const { blockhash } = await this._connection.getLatestBlockhash(options);
 
-		const message = new TransactionMessage({
+		const message = new web3.TransactionMessage({
 			instructions: this.instructions,
 			payerKey: this.feePayer,
 			recentBlockhash: blockhash, // Note: this blockhash will be replaced at the time of sign and send
 		}).compileToV0Message(this.addressLookupTableAccounts);
 
-		const transaction = new VersionedTransaction(message);
+		const transaction = new web3.VersionedTransaction(message);
 
 		let signedTransaction = transaction;
 		if (options?.sigVerify) {
@@ -173,14 +157,14 @@ export class TransactionPayload {
 	 * @returns
 	 */
 	async execute(
-		options?: ConfirmOptions & {
+		options?: web3.ConfirmOptions & {
 			sendTransactionInterval?: number;
 			maxSendTransactionRetries?: number;
 			priorityLevel?: PriorityLevel;
 			maxPriorityFeeSol?: number;
 			exactPriorityFeeSol?: number;
 		},
-	): Promise<TransactionSignature> {
+	): Promise<web3.TransactionSignature> {
 		if (!this._signTransaction) {
 			throw new Error("signTransaction is required to execute transaction payload.");
 		}
@@ -196,18 +180,20 @@ export class TransactionPayload {
 
 		const hasComputeUnitLimitInstruction = this.instructions.some(
 			(instruction) =>
-				instruction.programId.equals(ComputeBudgetProgram.programId) &&
-				ComputeBudgetInstruction.decodeInstructionType(instruction) === "SetComputeUnitLimit",
+				instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
+				web3.ComputeBudgetInstruction.decodeInstructionType(instruction) === "SetComputeUnitLimit",
 		);
 
 		const hasComputerUnitPriceInstruction = this.instructions.some(
 			(instruction) =>
-				instruction.programId.equals(ComputeBudgetProgram.programId) &&
-				ComputeBudgetInstruction.decodeInstructionType(instruction) === "SetComputeUnitPrice",
+				instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
+				web3.ComputeBudgetInstruction.decodeInstructionType(instruction) === "SetComputeUnitPrice",
 		);
 
 		if (!hasComputeUnitLimitInstruction) {
-			this.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnit }));
+			this.instructions.unshift(
+				web3.ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnit }),
+			);
 		}
 
 		if (!hasComputerUnitPriceInstruction) {
@@ -227,7 +213,7 @@ export class TransactionPayload {
 					: DEFAULT_MAX_PRIORITY_FEE;
 
 				const maxPriorityFeePerCU = BigNumber(maxPriorityFeeSol)
-					.times(LAMPORTS_PER_SOL)
+					.times(web3.LAMPORTS_PER_SOL)
 					.minus(BASE_FEE_LAMPORTS)
 					.div(computeUnit)
 					.div(LAMPORTS_PER_MICRO_LAMPORT);
@@ -245,7 +231,7 @@ export class TransactionPayload {
 			} else {
 				priorityFeeInMicroLamports = BigInt(
 					exactPriorityFeeSol
-						.times(LAMPORTS_PER_SOL)
+						.times(web3.LAMPORTS_PER_SOL)
 						.minus(BASE_FEE_LAMPORTS)
 						.div(computeUnit)
 						.div(LAMPORTS_PER_MICRO_LAMPORT)
@@ -254,7 +240,7 @@ export class TransactionPayload {
 			}
 
 			this.instructions.unshift(
-				ComputeBudgetProgram.setComputeUnitPrice({
+				web3.ComputeBudgetProgram.setComputeUnitPrice({
 					microLamports: priorityFeeInMicroLamports,
 				}),
 			);
@@ -262,13 +248,13 @@ export class TransactionPayload {
 
 		const { lastValidBlockHeight, blockhash } = await this._connection.getLatestBlockhash(options);
 
-		const message = new TransactionMessage({
+		const message = new web3.TransactionMessage({
 			instructions: this.instructions,
 			payerKey: this.feePayer,
 			recentBlockhash: blockhash, // Note: this blockhash will be replaced at the time of sign and send
 		}).compileToV0Message(this.addressLookupTableAccounts);
 
-		const transaction = new VersionedTransaction(message);
+		const transaction = new web3.VersionedTransaction(message);
 
 		if (this.signers && this.signers.length > 0) {
 			transaction.sign(this.signers);
@@ -332,7 +318,7 @@ export class TransactionPayload {
 			let startTime = Date.now();
 
 			const confirmTransaction = async () => {
-				let err: TransactionError | null = null;
+				let err: web3.TransactionError | null = null;
 
 				try {
 					const response = await this._connection.confirmTransaction(
