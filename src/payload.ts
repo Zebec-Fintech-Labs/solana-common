@@ -20,6 +20,19 @@ export const DEFAULT_MAX_PRIORITY_FEE = 0.001;
 
 export type PriorityLevel = "low" | "medium" | "high";
 
+export function replaceNonZeroAndSortPrioritizationFeesAsc(
+	recentPrioritizationFees: web3.RecentPrioritizationFees[],
+) {
+	return recentPrioritizationFees
+		.filter((b) => !Number.isNaN(b.prioritizationFee) && b.prioritizationFee > 0)
+		.sort((a, b) => {
+			// null is replaced as 0 because NaN is filered ahead.
+			const result = BigNumber(a.prioritizationFee).comparedTo(b.prioritizationFee) ?? 0;
+
+			return result;
+		});
+}
+
 export async function getRecentPriorityFee(
 	connection: web3.Connection,
 	instructions: web3.TransactionInstruction[],
@@ -34,17 +47,8 @@ export async function getRecentPriorityFee(
 		lockedWritableAccounts,
 	});
 
-	// console.log("recent fees", recentPrioritizationFees);
-	const sortedNonZeroList = recentPrioritizationFees
-		.filter((b) => b.prioritizationFee > 0)
-		.sort((a, b) => {
-			const result = BigNumber(a.prioritizationFee).comparedTo(b.prioritizationFee);
-			if (!result) {
-				throw new Error("Unexpected Error: Result is not supposed to be null.");
-			}
-
-			return result;
-		});
+	// console.debug("recent fees", recentPrioritizationFees);
+	const sortedNonZeroList = replaceNonZeroAndSortPrioritizationFeesAsc(recentPrioritizationFees);
 
 	let medianFee = BigNumber(0);
 
@@ -61,7 +65,7 @@ export async function getRecentPriorityFee(
 						.div(2)
 						.decimalPlaces(0, BigNumber.ROUND_DOWN);
 	}
-	// console.log("median fee:", medianFee.toFixed());
+	console.debug("median fee:", medianFee.toFixed());
 
 	// Apply multiplier based on priority level
 	const multipliers: Record<PriorityLevel, number> = {
@@ -74,7 +78,7 @@ export async function getRecentPriorityFee(
 	const calculatedFee = medianFee
 		.times(multipliers[priorityLevel]!)
 		.decimalPlaces(0, BigNumber.ROUND_FLOOR);
-	// console.log("calculated fee:", calculatedFee.toFixed());
+	console.debug("calculated fee:", calculatedFee.toFixed());
 
 	const fee = BigNumber.min(calculatedFee, maxFeeCap);
 
@@ -94,7 +98,6 @@ export type SignTransactionFunction = <T extends web3.Transaction | web3.Version
  */
 export class TransactionPayload {
 	/**
-	 *
 	 * @param _connection Solana web3 connnection
 	 * @param _errors Program errors map
 	 * @param instructions Transaction instructions
