@@ -26,6 +26,8 @@ export async function getMintDecimals(
 /** USDC Decimals = 6 */
 export const USDC_DECIMALS = 6;
 
+export const SOL_DECIMALS = 9;
+
 /**
  * WSOL Mint Address
  */
@@ -110,4 +112,42 @@ export function getAssociatedTokenAddressSync(
 	);
 
 	return address;
+}
+
+/**
+ * Converts a given amount in SOL to lamports (the smallest unit of SOL)
+ * @param amount Amount in SOL to be converted
+ * @returns
+ */
+export function parseSol(amount: BigNumber.Value): bigint {
+	return BigInt(BigNumber(amount).times(web3.LAMPORTS_PER_SOL).toFixed(0));
+}
+
+/**
+ * Converts a given amount in lamports to SOL
+ * @param amount Amount in lamports to be converted
+ * @returns
+ */
+export function formatSol(amount: BigNumber.Value): string {
+	return BigNumber(amount).dividedBy(web3.LAMPORTS_PER_SOL).toFixed();
+}
+
+/**
+ * Converts a given token amount in decimals to the smallest unit of that token
+ * @param amount Amount of token in decimals (e.g., 1876.190996)
+ * @param decimals decimals of the token (e.g., 6 for USDC)
+ * @returns
+ */
+export function parseToken(amount: BigNumber.Value, decimals: number): bigint {
+	return BigInt(BigNumber(amount).times(TEN_BIGNUM.pow(decimals)).toFixed(0));
+}
+
+/**
+ * Converts a given token amount in smallest unit to a human-readable format with decimals
+ * @param amount Amount of token in smallest unit without decimals (e.g., 1876190996)
+ * @param decimals Decimals of the token (e.g., 6 for USDC)
+ * @returns
+ */
+export function formatToken(amount: BigNumber.Value, decimals: number): string {
+	return BigNumber(amount).dividedBy(TEN_BIGNUM.pow(decimals)).toFixed();
 }
