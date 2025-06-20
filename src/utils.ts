@@ -1,6 +1,6 @@
 import { BigNumber } from "bignumber.js";
 
-import { utils, web3 } from "@coral-xyz/anchor";
+import { Address, translateAddress, utils, web3 } from "@coral-xyz/anchor";
 
 const mintToDecimalsMap = new Map<string, number>();
 
@@ -150,4 +150,51 @@ export function parseToken(amount: BigNumber.Value, decimals: number): bigint {
  */
 export function formatToken(amount: BigNumber.Value, decimals: number): string {
 	return BigNumber(amount).dividedBy(TEN_BIGNUM.pow(decimals)).toFixed();
+}
+
+export type FormattedBalance = string;
+
+export async function getSolBalance(
+	connection: web3.Connection,
+	address: Address,
+): Promise<FormattedBalance> {
+	const balance = await connection.getBalance(translateAddress(address), "finalized");
+
+	return formatSol(balance);
+}
+
+export async function getTokenBalances(
+	connection: web3.Connection,
+	address: Address,
+	tokenMints: Address[],
+	allowOwnerOffCurve = false,
+): Promise<{ [key: string]: FormattedBalance }[]> {
+	const associatedTokenAccounts = tokenMints.map((mint) =>
+		getAssociatedTokenAddressSync(
+			translateAddress(mint),
+			translateAddress(address),
+			allowOwnerOffCurve,
+		),
+	);
+
+	const accountsInfo = await connection.getMultipleParsedAccounts(associatedTokenAccounts, {
+		commitment: "finalized",
+	});
+
+	return accountsInfo.value.map((accountInfo, i) => {
+		if (!accountInfo) {
+			return { [tokenMints[i]!.toString()]: "0" };
+		}
+
+		if (Buffer.isBuffer(accountInfo.data)) {
+			throw new Error("Account did not parsed. Account may not associated");
+		} else {
+			return {
+				[accountInfo.data.parsed.info.mint.toString()]: formatToken(
+					accountInfo.data.parsed.info.tokenAmount.amount,
+					accountInfo.data.parsed.info.tokenAmount.decimals,
+				),
+			};
+		}
+	});
 }
