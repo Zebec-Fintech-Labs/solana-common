@@ -153,6 +153,7 @@ export function formatToken(amount: BigNumber.Value, decimals: number): string {
 }
 
 export type FormattedBalance = string;
+export type PublicKeyString = string;
 
 export async function getSolBalance(
 	connection: web3.Connection,
@@ -168,7 +169,7 @@ export async function getTokenBalances(
 	address: Address,
 	tokenMints: Address[],
 	allowOwnerOffCurve = false,
-): Promise<{ [key: string]: FormattedBalance }[]> {
+): Promise<Record<PublicKeyString, FormattedBalance>> {
 	const associatedTokenAccounts = tokenMints.map((mint) =>
 		getAssociatedTokenAddressSync(
 			translateAddress(mint),
@@ -181,20 +182,21 @@ export async function getTokenBalances(
 		commitment: "finalized",
 	});
 
-	return accountsInfo.value.map((accountInfo, i) => {
+	let balances: Record<string, FormattedBalance> = {};
+	accountsInfo.value.map((accountInfo, i) => {
 		if (!accountInfo) {
-			return { [tokenMints[i]!.toString()]: "0" };
-		}
-
-		if (Buffer.isBuffer(accountInfo.data)) {
-			throw new Error("Account did not parsed. Account may not associated");
+			balances[tokenMints[i]!.toString()] = "0";
 		} else {
-			return {
-				[accountInfo.data.parsed.info.mint.toString()]: formatToken(
+			if (Buffer.isBuffer(accountInfo.data)) {
+				throw new Error("Account did not parsed. Account may not Associated Token Account.");
+			} else {
+				balances[tokenMints[i]!.toString()] = formatToken(
 					accountInfo.data.parsed.info.tokenAmount.amount,
 					accountInfo.data.parsed.info.tokenAmount.decimals,
-				),
-			};
+				);
+			}
 		}
 	});
+
+	return balances;
 }
