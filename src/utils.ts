@@ -158,8 +158,9 @@ export type PublicKeyString = string;
 export async function getSolBalance(
 	connection: web3.Connection,
 	address: Address,
+	commitmentOrConfig: web3.Commitment | web3.GetBalanceConfig = "finalized",
 ): Promise<FormattedBalance> {
-	const balance = await connection.getBalance(translateAddress(address), "finalized");
+	const balance = await connection.getBalance(translateAddress(address), commitmentOrConfig);
 
 	return formatSol(balance);
 }
@@ -169,6 +170,7 @@ export async function getTokenBalances(
 	address: Address,
 	tokenMints: Address[],
 	allowOwnerOffCurve = false,
+	config: web3.GetBalanceConfig = { commitment: "confirmed" },
 ): Promise<Record<PublicKeyString, FormattedBalance>> {
 	const associatedTokenAccounts = tokenMints.map((mint) =>
 		getAssociatedTokenAddressSync(
@@ -178,9 +180,7 @@ export async function getTokenBalances(
 		),
 	);
 
-	const accountsInfo = await connection.getMultipleParsedAccounts(associatedTokenAccounts, {
-		commitment: "finalized",
-	});
+	const accountsInfo = await connection.getMultipleParsedAccounts(associatedTokenAccounts, config);
 
 	let balances: Record<string, FormattedBalance> = {};
 	accountsInfo.value.map((accountInfo, i) => {

@@ -20,7 +20,7 @@ describe("getTokenBalances()", () => {
 		console.log("balancees", balances);
 
 		assert.strictEqual(balances["5qEhjfVc5C6bz1Vi7Uj5SiSeDvqsMtZwuVS9njoVPcRr"], "0");
-		assert.strictEqual(balances["De31sBPcDejCVpZZh1fq8SNs7AcuWcBKuU3k2jqnkmKc"], "10328.73275");
+		assert.strictEqual(balances["De31sBPcDejCVpZZh1fq8SNs7AcuWcBKuU3k2jqnkmKc"], "10329.51275");
 		assert.strictEqual(balances["8CSvK7xceqUeqRaPr91r5kgteXGcWmBL48aoUQCtdizq"], "0");
 		assert(!balances["CxGWhBSj833PkjiJWhp3LiGMdQsqURkvCfigQ5Q4YNSK"]);
 	});
