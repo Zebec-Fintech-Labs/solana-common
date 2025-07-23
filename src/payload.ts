@@ -287,7 +287,7 @@ export class TransactionPayload {
 				while (!confirmed && blockheight < lastValidBlockHeight && retry < sendTransactionRetry) {
 					try {
 						await this._connection.sendRawTransaction(signedTransaction.serialize(), options);
-						console.debug("Signatue sent: %s at %d", signature, Date.now());
+						console.debug("Signatue sent: %s at %o", signature, new Date(Date.now()));
 						retry += 1;
 						await sleep(sendTransactionInterval);
 						blockheight = await this._connection.getBlockHeight(options);
@@ -337,8 +337,8 @@ export class TransactionPayload {
 
 					if (!err) {
 						const endTime = Date.now();
-						console.debug("Confirmed at: %d", endTime);
-						console.debug("Time elapsed: %d", endTime - startTime);
+						console.debug("Confirmed at: %o", new Date(endTime));
+						console.debug("Time elapsed: %d ms", endTime - startTime);
 						confirmed = true;
 
 						return;
