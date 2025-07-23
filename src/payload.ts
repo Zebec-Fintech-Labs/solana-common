@@ -366,6 +366,13 @@ export class TransactionPayload {
 			const translatedError = translateError(err, this._errors);
 			console.debug("translated error:", translatedError);
 
+			const hasErrorForInsufficientBalance =
+				translatedError.message.includes(
+					"Attempt to debit an account but found no record of a prior credit",
+				) || translatedError.message.includes("custom program error: 0x1");
+			if (hasErrorForInsufficientBalance) {
+				throw new Error("Account does not have enough SOL for transaction");
+			}
 			throw translatedError;
 		}
 	}
