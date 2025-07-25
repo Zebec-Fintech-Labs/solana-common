@@ -161,6 +161,7 @@ export class TransactionPayload {
 	 */
 	async execute(
 		options?: web3.ConfirmOptions & {
+			enablePriorityFee?: boolean;
 			sendTransactionInterval?: number;
 			maxSendTransactionRetries?: number;
 			priorityLevel?: PriorityLevel;
@@ -172,81 +173,87 @@ export class TransactionPayload {
 			throw new Error("signTransaction is required to execute transaction payload.");
 		}
 
-		const simulationResult = await this.simulate(options);
+		const enablePriorityFee = options?.enablePriorityFee ?? true;
 
-		// 300 added for Compute Budget Instructions
-		const computeUnit = simulationResult.value.unitsConsumed
-			? simulationResult.value.unitsConsumed + 300
-			: MAX_COMPUTE_UNIT;
-		// console.log("compute unit:", computeUnit);
-		// console.log("compute unit:", computeUnit);
+		if (enablePriorityFee) {
+			const simulationResult = await this.simulate(options);
 
-		const hasComputeUnitLimitInstruction = this.instructions.some(
-			(instruction) =>
-				instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
-				web3.ComputeBudgetInstruction.decodeInstructionType(instruction) === "SetComputeUnitLimit",
-		);
+			// 300 added for Compute Budget Instructions
+			const computeUnit = simulationResult.value.unitsConsumed
+				? simulationResult.value.unitsConsumed + 300
+				: MAX_COMPUTE_UNIT;
+			// console.log("compute unit:", computeUnit);
+			// console.log("compute unit:", computeUnit);
 
-		const hasComputerUnitPriceInstruction = this.instructions.some(
-			(instruction) =>
-				instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
-				web3.ComputeBudgetInstruction.decodeInstructionType(instruction) === "SetComputeUnitPrice",
-		);
-
-		if (!hasComputeUnitLimitInstruction) {
-			this.instructions.unshift(
-				web3.ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnit }),
+			const hasComputeUnitLimitInstruction = this.instructions.some(
+				(instruction) =>
+					instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
+					web3.ComputeBudgetInstruction.decodeInstructionType(instruction) ===
+						"SetComputeUnitLimit",
 			);
-		}
 
-		if (!hasComputerUnitPriceInstruction) {
-			const exactPriorityFeeSol = options?.exactPriorityFeeSol
-				? BigNumber(options.exactPriorityFeeSol)
-				: undefined;
+			const hasComputerUnitPriceInstruction = this.instructions.some(
+				(instruction) =>
+					instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
+					web3.ComputeBudgetInstruction.decodeInstructionType(instruction) ===
+						"SetComputeUnitPrice",
+			);
 
-			let priorityFeeInMicroLamports = BigInt(0);
-
-			if (!exactPriorityFeeSol) {
-				const priorityLevel: PriorityLevel = options?.priorityLevel
-					? options.priorityLevel
-					: "medium";
-
-				const maxPriorityFeeSol = options?.maxPriorityFeeSol
-					? options?.maxPriorityFeeSol
-					: DEFAULT_MAX_PRIORITY_FEE;
-
-				const maxPriorityFeePerCU = BigNumber(maxPriorityFeeSol)
-					.times(web3.LAMPORTS_PER_SOL)
-					.minus(BASE_FEE_LAMPORTS)
-					.div(computeUnit)
-					.div(LAMPORTS_PER_MICRO_LAMPORT);
-				// console.log("max priority fee per cu:", maxPriorityFeePerCU.toFixed());
-
-				const priorityFeePerCU = await getRecentPriorityFee(
-					this._connection,
-					this.instructions,
-					priorityLevel,
-					maxPriorityFeePerCU,
-				);
-				// console.log("priority fee per cu:", priorityFeePerCU.toFixed());
-
-				priorityFeeInMicroLamports = BigInt(priorityFeePerCU.toFixed(0, BigNumber.ROUND_DOWN));
-			} else {
-				priorityFeeInMicroLamports = BigInt(
-					exactPriorityFeeSol
-						.times(web3.LAMPORTS_PER_SOL)
-						.minus(BASE_FEE_LAMPORTS)
-						.div(computeUnit)
-						.div(LAMPORTS_PER_MICRO_LAMPORT)
-						.toFixed(0, BigNumber.ROUND_DOWN),
+			if (!hasComputeUnitLimitInstruction) {
+				this.instructions.unshift(
+					web3.ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnit }),
 				);
 			}
 
-			this.instructions.unshift(
-				web3.ComputeBudgetProgram.setComputeUnitPrice({
-					microLamports: priorityFeeInMicroLamports,
-				}),
-			);
+			if (!hasComputerUnitPriceInstruction) {
+				const exactPriorityFeeSol = options?.exactPriorityFeeSol
+					? BigNumber(options.exactPriorityFeeSol)
+					: undefined;
+
+				let priorityFeeInMicroLamports = BigInt(0);
+
+				if (!exactPriorityFeeSol) {
+					const priorityLevel: PriorityLevel = options?.priorityLevel
+						? options.priorityLevel
+						: "medium";
+
+					const maxPriorityFeeSol = options?.maxPriorityFeeSol
+						? options?.maxPriorityFeeSol
+						: DEFAULT_MAX_PRIORITY_FEE;
+
+					const maxPriorityFeePerCU = BigNumber(maxPriorityFeeSol)
+						.times(web3.LAMPORTS_PER_SOL)
+						.minus(BASE_FEE_LAMPORTS)
+						.div(computeUnit)
+						.div(LAMPORTS_PER_MICRO_LAMPORT);
+					// console.log("max priority fee per cu:", maxPriorityFeePerCU.toFixed());
+
+					const priorityFeePerCU = await getRecentPriorityFee(
+						this._connection,
+						this.instructions,
+						priorityLevel,
+						maxPriorityFeePerCU,
+					);
+					// console.log("priority fee per cu:", priorityFeePerCU.toFixed());
+
+					priorityFeeInMicroLamports = BigInt(priorityFeePerCU.toFixed(0, BigNumber.ROUND_DOWN));
+				} else {
+					priorityFeeInMicroLamports = BigInt(
+						exactPriorityFeeSol
+							.times(web3.LAMPORTS_PER_SOL)
+							.minus(BASE_FEE_LAMPORTS)
+							.div(computeUnit)
+							.div(LAMPORTS_PER_MICRO_LAMPORT)
+							.toFixed(0, BigNumber.ROUND_DOWN),
+					);
+				}
+
+				this.instructions.unshift(
+					web3.ComputeBudgetProgram.setComputeUnitPrice({
+						microLamports: priorityFeeInMicroLamports,
+					}),
+				);
+			}
 		}
 
 		const { lastValidBlockHeight, blockhash } = await this._connection.getLatestBlockhash(options);
