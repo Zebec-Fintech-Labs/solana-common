@@ -12,14 +12,19 @@ export function getConnection(
 ) {
 	const network = cluster ? cluster : "mainnet-beta";
 	const RPC_URL = network === "devnet" ? process.env.DEVNET_RPC_URL : process.env.RPC_URL;
-	assert(RPC_URL && RPC_URL !== "", `missing env var: ${network === "devnet" ? "DEVNET_RPC_URL" : "RPC_URL"}`);
+	assert(
+		RPC_URL && RPC_URL !== "",
+		`missing env var: ${network === "devnet" ? "DEVNET_RPC_URL" : "RPC_URL"}`,
+	);
 
 	return new Connection(RPC_URL, commitment);
 }
 
 export function getWallets(cluster?: "mainnet-beta" | "devnet") {
 	const SECRET_KEYS =
-		cluster && cluster === "mainnet-beta" ? process.env.MAINNET_SECRET_KEYS : process.env.DEVNET_SECRET_KEYS;
+		cluster && cluster === "mainnet-beta"
+			? process.env.MAINNET_SECRET_KEYS
+			: process.env.DEVNET_SECRET_KEYS;
 
 	assert(
 		SECRET_KEYS && SECRET_KEYS != "",

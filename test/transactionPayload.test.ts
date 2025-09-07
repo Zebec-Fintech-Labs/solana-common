@@ -22,10 +22,12 @@ describe("TransactionPayload", () => {
 		const payload = new TransactionPayload(
 			connection,
 			new Map(),
-			[transferIxn],
-			fromKeypair.publicKey,
-			[],
-			[],
+			{
+				instructions: [transferIxn],
+				feePayer: fromKeypair.publicKey,
+				signers: [],
+				addressLookupTableAccounts: [],
+			},
 			async (transaction) => {
 				if (transaction instanceof web3.Transaction) {
 					transaction.sign(fromKeypair);
@@ -49,10 +51,12 @@ describe("TransactionPayload", () => {
 		const payload = new TransactionPayload(
 			connection,
 			new Map(),
-			[transferIxn],
-			walletA.publicKey,
-			[],
-			[],
+			{
+				instructions: [transferIxn],
+				feePayer: walletA.publicKey,
+				signers: [],
+				addressLookupTableAccounts: [],
+			},
 			async (transaction) => {
 				if (transaction instanceof web3.Transaction) {
 					transaction.sign(walletA.payer);
@@ -64,7 +68,7 @@ describe("TransactionPayload", () => {
 			},
 		);
 
-		const signature = await payload.execute({ commitment: "confirmed", enablePriorityFee: false });
+		const signature = await payload.execute({ commitment: "confirmed" });
 		console.log("signature:", signature);
 	});
 });
