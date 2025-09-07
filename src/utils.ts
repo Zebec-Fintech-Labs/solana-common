@@ -1,6 +1,8 @@
 import { BigNumber } from "bignumber.js";
 
-import { Address, translateAddress, utils, web3 } from "@coral-xyz/anchor";
+import { Address, translateAddress, translateError, web3 } from "@coral-xyz/anchor";
+
+import { ASSOCIATED_TOKEN_PROGRAM_ID, TEN_BIGNUM, TOKEN_PROGRAM_ID } from "./constants";
 
 const mintToDecimalsMap = new Map<string, number>();
 
@@ -23,31 +25,12 @@ export async function getMintDecimals(
 	}
 }
 
-/** USDC Decimals = 6 */
-export const USDC_DECIMALS = 6;
-
-export const SOL_DECIMALS = 9;
-
 /**
- * WSOL Mint Address
+ * Utility function for delays
  */
-export const WSOL = new web3.PublicKey("So11111111111111111111111111111111111111112");
-
-export const ZBCN = new web3.PublicKey("ZBCNpuD7YMXzTHB2fhGkGi78MNsHGLRXUhRewNRm9RU");
-
-/** BigNumber Object for 10 */
-export const TEN_BIGNUM = BigNumber(10);
-
-export const UNITS_PER_USDC = TEN_BIGNUM.pow(USDC_DECIMALS);
-
-/** Token Program ID */
-export const TOKEN_PROGRAM_ID = utils.token.TOKEN_PROGRAM_ID;
-
-/** Associated Token Program ID */
-export const ASSOCIATED_TOKEN_PROGRAM_ID = utils.token.ASSOCIATED_PROGRAM_ID;
-
-/** Memo Program ID */
-export const MEMO_PROGRAM_ID = new web3.PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+export function sleep(durationInMs: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, durationInMs));
+}
 
 /**
  * Construct a CreateAssociatedTokenAccount instruction
@@ -199,4 +182,117 @@ export async function getTokenBalances(
 	});
 
 	return balances;
+}
+
+export function parseSolanaSendTransactionError(error: unknown, idlErrors: Map<number, string>) {
+	const translatedError = translateError(error, idlErrors);
+	console.debug("Transaction execution error:", translatedError);
+
+	// Enhanced insufficient balance detection
+	const isInsufficientBalance =
+		translatedError.message.includes(
+			"Attempt to debit an account but found no record of a prior credit.",
+		) ||
+		translatedError.message.includes("custom program error: 0x1") ||
+		translatedError.message.includes("insufficient funds");
+
+	if (isInsufficientBalance) {
+		return Error("An account does not have enough SOL for transaction");
+	}
+
+	return translatedError;
+}
+
+/**
+ * Filters and sorts prioritization fees in ascending order
+ * @param recentPrioritizationFees Recent fee data from Solana RPC
+ * @returns Sorted array of non-zero fees
+ */
+export function replaceNonZeroAndSortPrioritizationFeesAsc(
+	recentPrioritizationFees: web3.RecentPrioritizationFees[],
+): web3.RecentPrioritizationFees[] {
+	return recentPrioritizationFees
+		.filter((fee) => !Number.isNaN(fee.prioritizationFee) && fee.prioritizationFee > 0)
+		.sort((a, b) => {
+			return BigNumber(a.prioritizationFee).comparedTo(b.prioritizationFee) ?? 0;
+		});
+}
+
+/**
+ * Priority fee calculation levels
+ */
+export type PriorityLevel = "low" | "medium" | "high";
+
+/**
+ * Calculates optimal priority fee based on recent network activity
+ * @param connection Solana RPC connection
+ * @param instructions Transaction instructions to analyze
+ * @param priorityLevel Fee calculation strategy
+ * @param maxFeeCap Maximum fee cap to prevent overpaying
+ * @returns Calculated priority fee in micro-lamports
+ */
+export async function getRecentPriorityFee(
+	connection: web3.Connection,
+	instructions: web3.TransactionInstruction[],
+	priorityLevel: PriorityLevel,
+	maxFeeCap: BigNumber,
+): Promise<BigNumber> {
+	try {
+		const lockedWritableAccounts = [
+			...new Set(
+				instructions.flatMap((ix) => [
+					...ix.keys.filter((key) => key.isSigner || key.isWritable).map((key) => key.pubkey),
+					ix.programId,
+				]),
+			),
+		];
+
+		const recentPrioritizationFees = await connection.getRecentPrioritizationFees({
+			lockedWritableAccounts,
+		});
+
+		const sortedNonZeroList = replaceNonZeroAndSortPrioritizationFeesAsc(recentPrioritizationFees);
+
+		let medianFee = BigNumber(0);
+
+		if (sortedNonZeroList.length > 0) {
+			const midIndex = Math.floor(sortedNonZeroList.length / 2);
+			medianFee =
+				sortedNonZeroList.length % 2 !== 0
+					? BigNumber(sortedNonZeroList[midIndex]!.prioritizationFee).decimalPlaces(
+							0,
+							BigNumber.ROUND_DOWN,
+						)
+					: BigNumber(sortedNonZeroList[midIndex - 1]!.prioritizationFee)
+							.plus(sortedNonZeroList[midIndex]!.prioritizationFee)
+							.div(2)
+							.decimalPlaces(0, BigNumber.ROUND_DOWN);
+		}
+
+		console.debug("Median fee for priority level %s: %s", priorityLevel, medianFee.toFixed());
+
+		// Apply multiplier based on priority level
+		const multipliers: Record<PriorityLevel, number> = {
+			low: 0.8,
+			medium: 1.2,
+			high: 2.0,
+		};
+
+		const calculatedFee = medianFee
+			.times(multipliers[priorityLevel])
+			.decimalPlaces(0, BigNumber.ROUND_CEIL);
+
+		console.debug("Calculated fee:", calculatedFee.toFixed());
+
+		return BigNumber.min(calculatedFee, maxFeeCap);
+	} catch (error) {
+		console.warn("Failed to fetch recent priority fees, using fallback:", error);
+		// Fallback to a reasonable default based on priority level
+		const fallbackFees: Record<PriorityLevel, number> = {
+			low: 1000,
+			medium: 5000,
+			high: 25000,
+		};
+		return BigNumber.min(fallbackFees[priorityLevel], maxFeeCap);
+	}
 }
