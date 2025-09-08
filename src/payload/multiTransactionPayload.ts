@@ -1,3 +1,4 @@
+import assert from "assert";
 import { BigNumber } from "bignumber.js";
 
 import { translateError, utils, web3 } from "@coral-xyz/anchor";
@@ -41,6 +42,17 @@ export type SignAllTransactionsFunction = <T extends web3.Transaction | web3.Ver
 /**
  * Enhanced transaction payload class with improved error handling and retry logic
  */
+
+export type MultiTransactionPayloadExecuteReturn = (PromiseSettledResult<string> & {
+	transactionData: {
+		readonly instructions: web3.TransactionInstruction[];
+		readonly feePayer: web3.PublicKey;
+		readonly signers?: web3.Signer[];
+		readonly addressLookupTableAccounts?: web3.AddressLookupTableAccount[];
+	};
+	transaction: web3.VersionedTransaction;
+})[];
+
 export class MultiTransactionPayload {
 	private static readonly ERROR_MESSAGES = {
 		SIGN_FUNCTION_REQUIRED: "signTransaction is required to execute transaction payload.",
@@ -371,7 +383,7 @@ export class MultiTransactionPayload {
 	 */
 	async execute(
 		options?: MultiTransactionExecutionOptions,
-	): Promise<PromiseSettledResult<string>[]> {
+	): Promise<MultiTransactionPayloadExecuteReturn> {
 		if (!this._signAllTransactions) {
 			throw new Error(MultiTransactionPayload.ERROR_MESSAGES.SIGN_FUNCTION_REQUIRED);
 		}
@@ -397,9 +409,9 @@ export class MultiTransactionPayload {
 
 		const { lastValidBlockHeight, blockhash } = await this._connection.getLatestBlockhash(options);
 
-		const transaction = await this.buildVersionTransactions(blockhash);
+		const transactions = await this.buildVersionTransactions(blockhash);
 
-		const signedTransactions = await this._signAllTransactions(transaction);
+		const signedTransactions = await this._signAllTransactions(transactions);
 
 		const promises = signedTransactions.map(async (signedTransaction) => {
 			try {
@@ -421,7 +433,19 @@ export class MultiTransactionPayload {
 			}
 		});
 
-		const result = await Promise.allSettled(promises);
-		return result;
+		const results = await Promise.allSettled(promises);
+
+		assert(results.length === this.transactionsData.length, "Results length mismatch");
+		assert(results.length === transactions.length, "Results length mismatch");
+
+		const resultsWithAdditionalData = results.map((result, i) => {
+			return {
+				...result,
+				transactionData: this.transactionsData[i]!,
+				transaction: transactions[i]!,
+			};
+		});
+
+		return resultsWithAdditionalData;
 	}
 }

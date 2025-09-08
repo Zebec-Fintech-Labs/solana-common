@@ -1,4 +1,4 @@
-import { web3 } from "@coral-xyz/anchor";
+import { utils, web3 } from "@coral-xyz/anchor";
 
 import { MultiTransactionPayload } from "../src";
 import { getConnection, getWallets } from "./shared";
@@ -60,8 +60,8 @@ describe("TransactionPayload", () => {
 		console.log("Result:", result);
 	});
 
-	it.only("should make transaction without priority fee", async () => {
-		const transactionData = Array.from({ length: 20 }).map((_) => {
+	it.only("should execute transaction", async () => {
+		const transactionData = Array.from({ length: 3 }).map((_) => {
 			return {
 				instructions: [
 					web3.SystemProgram.transfer({
@@ -92,7 +92,22 @@ describe("TransactionPayload", () => {
 			},
 		);
 
-		const signature = await payload.execute({ commitment: "confirmed" });
-		console.log("signature:", signature);
+		const results = await payload.execute({ commitment: "confirmed" });
+		console.log(
+			"results:",
+			JSON.stringify(
+				results.map((result) => {
+					return {
+						...result,
+						transaction: {
+							...result.transaction,
+							signatures: result.transaction.signatures.map((s) => utils.bytes.bs58.encode(s)),
+						},
+					};
+				}),
+				null,
+				2,
+			),
+		);
 	});
 });
