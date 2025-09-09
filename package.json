@@ -17,18 +17,18 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "^22.15.3",
-    "dotenv": "^17.2.0",
-    "mocha": "^11.1.0",
-    "prettier": "^3.5.3",
+    "@types/node": "^24.3.1",
+    "dotenv": "^17.2.2",
+    "mocha": "^11.7.2",
+    "prettier": "^3.6.2",
     "rimraf": "^6.0.1",
     "ts-mocha": "^11.1.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "typescript": "^5.9.2"
   },
   "dependencies": {
-    "@coral-xyz/anchor": "0.31.1",
-    "bignumber.js": "^9.3.0"
+    "@coral-xyz/anchor": "^0.31.1",
+    "bignumber.js": "^9.3.1"
   },
   "repository": {
     "type": "git",
