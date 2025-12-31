@@ -1,6 +1,13 @@
 import { BigNumber } from "bignumber.js";
 
-import { Address, translateAddress, translateError, web3 } from "@coral-xyz/anchor";
+import {
+	Address,
+	AnchorError,
+	ProgramError,
+	translateAddress,
+	translateError,
+	web3,
+} from "@coral-xyz/anchor";
 
 import { ASSOCIATED_TOKEN_PROGRAM_ID, TEN_BIGNUM, TOKEN_PROGRAM_ID } from "./constants";
 
@@ -187,22 +194,104 @@ export async function getTokenBalances(
 export function parseSolanaSendTransactionError(error: unknown, idlErrors: Map<number, string>) {
 	const translatedError = translateError(error, idlErrors);
 	console.debug("Transaction execution error:", translatedError);
+	console.debug("Transaction Message:", translatedError.transactionMessage);
 
-	// Enhanced insufficient balance detection
+	const jupError = parseJupErrors(translatedError);
+
+	if (jupError) {
+		return jupError;
+	}
+
+	const insufficientFundsError = parseInsufficientFundsErrorMessage(translatedError);
+
+	if (insufficientFundsError) {
+		console.log("here: ");
+		return insufficientFundsError;
+	}
+
+	if (translatedError instanceof AnchorError) {
+		return new Error(
+			`Program: ${translatedError.program.toString()} failed.  Code: ${translatedError.error.errorCode.number} Message: ${translatedError.error.errorMessage}`,
+		);
+	} else if (translatedError instanceof ProgramError) {
+		return new Error(
+			`Program ` +
+				`${translatedError.program ? translatedError.program.toString() + " " : ""}` +
+				`failed: Code: ${translatedError.code} Message: ${translatedError.msg}`,
+		);
+	} else {
+		return translatedError;
+	}
+}
+
+function parseJupErrors(translatedError: any) {
+	const isJupSippageExceededError = translatedError.message.includes(
+		"Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 failed: custom program error: 0x1771",
+	);
+
+	if (isJupSippageExceededError) {
+		return Error(
+			"Jupiter aggregation error: transaction failed during token swap due to slippage exceed",
+		);
+	}
+
+	const isJupNotEnoughAccountKeysError = translatedError.message.includes(
+		"Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 failed: custom program error: 0x1778",
+	);
+
+	if (isJupNotEnoughAccountKeysError) {
+		return Error(
+			"Jupiter aggregation error: transaction failed during swap due to insufficient account keys provided",
+		);
+	}
+
+	const isJupExactOutAmountNotMatchedError = translatedError.message.includes(
+		"Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 failed: custom program error: 0x1781",
+	);
+
+	if (isJupExactOutAmountNotMatchedError) {
+		return Error(
+			"Jupiter aggregation error: transaction failed during swap as the exact output amount could not be matched",
+		);
+	}
+
+	const isJupInsuficientFundsError = translatedError.message.includes(
+		"Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 failed: custom program error: 0x1788",
+	);
+
+	if (isJupInsuficientFundsError) {
+		return Error(
+			"Jupiter aggregation error: transaction failed during swap due to insufficient funds for either swap amount, transaction fees or rent fees",
+		);
+	}
+
+	const isJupInvalidTokenAccountError = translatedError.message.includes(
+		"Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 failed: custom program error: 0x1789",
+	);
+
+	if (isJupInvalidTokenAccountError) {
+		return Error(
+			"Jupiter aggregation error: transaction failed during swap due to invalid or uninitialized token account",
+		);
+	}
+
+	return null;
+}
+
+function parseInsufficientFundsErrorMessage(translatedError: any): Error | null {
 	const isInsufficientBalance =
 		translatedError.message.includes(
 			"Attempt to debit an account but found no record of a prior credit.",
 		) ||
-		translatedError.message.includes("custom program error: 0x1") ||
+		translatedError.message.includes("custom program error: 0x1\n") ||
 		translatedError.message.includes("insufficient funds");
 
 	if (isInsufficientBalance) {
 		return Error("An account does not have enough SOL for transaction");
 	}
 
-	return translatedError;
+	return null;
 }
-
 /**
  * Filters and sorts prioritization fees in ascending order
  * @param recentPrioritizationFees Recent fee data from Solana RPC
