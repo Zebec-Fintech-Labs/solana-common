@@ -290,7 +290,7 @@ export class TransactionPayload {
 			if (enablePriorityFee) {
 				const simulationResult = await this.simulate(options);
 				const computeUnit = simulationResult.value.unitsConsumed
-					? simulationResult.value.unitsConsumed + 300
+					? Math.floor(simulationResult.value.unitsConsumed * 1.1)
 					: MAX_COMPUTE_UNIT;
 
 				await this.addPriorityFeeInstructions(computeUnit, options);
