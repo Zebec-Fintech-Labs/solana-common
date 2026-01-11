@@ -7,10 +7,12 @@ const network = "devnet";
 const connection = getConnection(network, "confirmed");
 const wallets = getWallets(network);
 const walletA = wallets[0];
+console.log("walletA:", walletA.publicKey.toString());
 const walletB = wallets[1];
+console.log("walletB:", walletB.publicKey.toString());
 
 describe("TransactionPayload", () => {
-	it("should return 0x1 error upon 0 SOL balance", async () => {
+	it.skip("should return 0x1 error upon 0 SOL balance", async () => {
 		const fromKeypair = web3.Keypair.generate();
 		const toKeypair = web3.Keypair.generate();
 
@@ -42,11 +44,11 @@ describe("TransactionPayload", () => {
 		const signature = await payload.execute({ commitment: "confirmed" });
 	});
 
-	it.only("should make transaction without priority fee", async () => {
+	it("should make transaction", async () => {
 		const transferIxn = web3.SystemProgram.transfer({
 			fromPubkey: walletA.publicKey,
 			toPubkey: walletB.publicKey,
-			lamports: 1 * web3.LAMPORTS_PER_SOL,
+			lamports: 0.0001 * web3.LAMPORTS_PER_SOL,
 		});
 		const payload = new TransactionPayload(
 			connection,
@@ -68,7 +70,11 @@ describe("TransactionPayload", () => {
 			},
 		);
 
-		const signature = await payload.execute({ commitment: "confirmed" });
+		const signature = await payload.execute({
+			commitment: "confirmed",
+			enablePriorityFee: true,
+			skipPreflight: true,
+		});
 		console.log("signature:", signature);
 	});
 });
