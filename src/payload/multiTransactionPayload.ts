@@ -5,6 +5,7 @@ import { translateError, utils, web3 } from "@coral-xyz/anchor";
 
 import {
 	BASE_FEE_LAMPORTS,
+	COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT,
 	DEFAULT_MAX_PRIORITY_FEE,
 	LAMPORTS_PER_MICRO_LAMPORT,
 	MAX_COMPUTE_UNIT,
@@ -304,7 +305,9 @@ export class MultiTransactionPayload {
 				this.transactionsData.map(async (data, i) => {
 					const simulationResult = simulationResults.get(i);
 					const computeUnit = simulationResult?.value.unitsConsumed
-						? Math.floor(simulationResult.value.unitsConsumed * 1.2)
+						? Math.floor(
+								(simulationResult.value.unitsConsumed + COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT) * 1.1,
+							)
 						: MAX_COMPUTE_UNIT;
 
 					await this.addPriorityFeeInstructions(data.instructions, computeUnit, options);

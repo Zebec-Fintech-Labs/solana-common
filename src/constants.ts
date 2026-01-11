@@ -36,3 +36,6 @@ export const ASSOCIATED_TOKEN_PROGRAM_ID = utils.token.ASSOCIATED_PROGRAM_ID;
 
 /** Memo Program ID */
 export const MEMO_PROGRAM_ID = new web3.PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+
+/** Compute units for the Compute Budget Program */
+export const COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT = 400;

@@ -4,6 +4,7 @@ import { translateError, utils, web3 } from "@coral-xyz/anchor";
 
 import {
 	BASE_FEE_LAMPORTS,
+	COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT,
 	DEFAULT_MAX_PRIORITY_FEE,
 	LAMPORTS_PER_MICRO_LAMPORT,
 	MAX_COMPUTE_UNIT,
@@ -198,7 +199,9 @@ export class TransactionPayload {
 				// Simulate WITHOUT priority fee instructions first
 				const simulationResult = await this.simulate(options);
 				const computeUnit = simulationResult.value.unitsConsumed
-					? Math.floor(simulationResult.value.unitsConsumed * 1.2)
+					? Math.floor(
+							(simulationResult.value.unitsConsumed + COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT) * 1.1,
+						)
 					: MAX_COMPUTE_UNIT;
 
 				// Get priority fee instructions but don't modify transactionData
