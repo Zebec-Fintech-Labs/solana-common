@@ -205,13 +205,12 @@ export function parseSolanaSendTransactionError(error: unknown, idlErrors: Map<n
 	const insufficientFundsError = parseInsufficientFundsErrorMessage(translatedError);
 
 	if (insufficientFundsError) {
-		console.log("here: ");
 		return insufficientFundsError;
 	}
 
 	if (translatedError instanceof AnchorError) {
 		return new Error(
-			`Program: ${translatedError.program.toString()} failed.  Code: ${translatedError.error.errorCode.number} Message: ${translatedError.error.errorMessage}`,
+			`Program: ${translatedError.program.toString()} failed. Code: ${translatedError.error.errorCode.code} Number: ${translatedError.error.errorCode.number} Message: ${translatedError.error.errorMessage}`,
 		);
 	} else if (translatedError instanceof ProgramError) {
 		return new Error(
@@ -341,6 +340,7 @@ export async function getRecentPriorityFee(
 		});
 
 		const sortedNonZeroList = replaceNonZeroAndSortPrioritizationFeesAsc(recentPrioritizationFees);
+		console.log("recent Priority fees:", sortedNonZeroList);
 
 		let medianFee = BigNumber(0);
 
