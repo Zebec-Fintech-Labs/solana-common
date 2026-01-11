@@ -9,7 +9,12 @@ import {
 	web3,
 } from "@coral-xyz/anchor";
 
-import { ASSOCIATED_TOKEN_PROGRAM_ID, TEN_BIGNUM, TOKEN_PROGRAM_ID } from "./constants";
+import {
+	ASSOCIATED_TOKEN_PROGRAM_ID,
+	DEFAULT_SEND_TRANSACTION_INTERVAL,
+	TEN_BIGNUM,
+	TOKEN_PROGRAM_ID,
+} from "./constants";
 
 const mintToDecimalsMap = new Map<string, number>();
 
@@ -194,7 +199,6 @@ export async function getTokenBalances(
 export function parseSolanaSendTransactionError(error: unknown, idlErrors: Map<number, string>) {
 	const translatedError = translateError(error, idlErrors);
 	console.debug("Transaction execution error:", translatedError);
-	console.debug("Transaction Message:", translatedError.transactionMessage);
 
 	const jupError = parseJupErrors(translatedError);
 
@@ -219,11 +223,17 @@ export function parseSolanaSendTransactionError(error: unknown, idlErrors: Map<n
 				`failed: Code: ${translatedError.code} Message: ${translatedError.msg}`,
 		);
 	} else {
-		return translatedError;
+		return "transactionMessage" in translatedError
+			? new Error(translatedError.transactionMessage)
+			: translatedError;
 	}
 }
 
 function parseJupErrors(translatedError: any) {
+	if (!translatedError.message) {
+		return null;
+	}
+
 	const isJupSippageExceededError = translatedError.message.includes(
 		"Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 failed: custom program error: 0x1771",
 	);
@@ -278,6 +288,10 @@ function parseJupErrors(translatedError: any) {
 }
 
 function parseInsufficientFundsErrorMessage(translatedError: any): Error | null {
+	if (!translatedError.message) {
+		return null;
+	}
+
 	const isInsufficientBalance =
 		translatedError.message.includes(
 			"Attempt to debit an account but found no record of a prior credit.",
@@ -327,12 +341,7 @@ export async function getRecentPriorityFee(
 ): Promise<BigNumber> {
 	try {
 		const lockedWritableAccounts = [
-			...new Set(
-				instructions.flatMap((ix) => [
-					...ix.keys.filter((key) => key.isSigner || key.isWritable).map((key) => key.pubkey),
-					ix.programId,
-				]),
-			),
+			...new Set(instructions.flatMap((ix) => [...ix.keys.map((key) => key.pubkey), ix.programId])),
 		];
 
 		const recentPrioritizationFees = await connection.getRecentPrioritizationFees({
@@ -350,12 +359,12 @@ export async function getRecentPriorityFee(
 				sortedNonZeroList.length % 2 !== 0
 					? BigNumber(sortedNonZeroList[midIndex]!.prioritizationFee).decimalPlaces(
 							0,
-							BigNumber.ROUND_DOWN,
+							BigNumber.ROUND_FLOOR,
 						)
 					: BigNumber(sortedNonZeroList[midIndex - 1]!.prioritizationFee)
 							.plus(sortedNonZeroList[midIndex]!.prioritizationFee)
 							.div(2)
-							.decimalPlaces(0, BigNumber.ROUND_DOWN);
+							.decimalPlaces(0, BigNumber.ROUND_FLOOR);
 		}
 
 		console.debug("Median fee for priority level %s: %s", priorityLevel, medianFee.toFixed());
@@ -384,4 +393,108 @@ export async function getRecentPriorityFee(
 		};
 		return BigNumber.min(fallbackFees[priorityLevel], maxFeeCap);
 	}
+}
+
+/**
+ * Transaction execution options
+ */
+export type TransactionExecutionOptions = web3.ConfirmOptions & {
+	enablePriorityFee?: boolean;
+	sendTransactionInterval?: number;
+	maxSendTransactionRetries?: number;
+	priorityLevel?: PriorityLevel;
+	maxPriorityFeeSol?: number;
+	exactPriorityFeeSol?: number;
+	confirmationTimeout?: number;
+};
+
+/**
+ * Handles transaction sending with retry logic
+ */
+export async function sendTransactionWithRetry(
+	connection: web3.Connection,
+	signedTransaction: web3.VersionedTransaction,
+	signature: string,
+	lastValidBlockHeight: number,
+	abortSignal: AbortSignal,
+	options?: TransactionExecutionOptions,
+): Promise<void> {
+	const sendTransactionInterval =
+		options?.sendTransactionInterval ?? DEFAULT_SEND_TRANSACTION_INTERVAL;
+	const maxRetries = options?.maxSendTransactionRetries ?? Number.MAX_SAFE_INTEGER;
+
+	let retry = 0;
+	let blockHeight = await connection.getBlockHeight(options);
+	let serializedTransaction = signedTransaction.serialize();
+
+	while (blockHeight < lastValidBlockHeight && retry < maxRetries && !abortSignal.aborted) {
+		try {
+			console.debug("Send... Attempt #%d", retry + 1);
+			await connection.sendRawTransaction(serializedTransaction, {
+				...options,
+				skipPreflight: options?.skipPreflight ?? false,
+			});
+
+			console.debug("Signature sent: %s at %o", signature, new Date());
+			retry++;
+			await sleep(sendTransactionInterval);
+			blockHeight = await connection.getBlockHeight(options);
+		} catch (err: any) {
+			if (err.message?.includes("This transaction has already been processed")) {
+				console.debug("Transaction already processed. Exiting send retry loop.");
+				return;
+			}
+
+			if (err.message?.includes("Blockhash not found")) {
+				console.debug("Expected error (will retry):", err.message);
+				retry++;
+				await sleep(sendTransactionInterval);
+				blockHeight = await connection.getBlockHeight(options);
+				continue;
+			}
+
+			throw err;
+		}
+	}
+
+	if (blockHeight >= lastValidBlockHeight) {
+		throw new Error("Block height exceeded before confirmation");
+	}
+}
+
+/**
+ * Confirms transaction with timeout handling
+ */
+export async function confirmTransactionWithTimeout(
+	connection: web3.Connection,
+	signature: string,
+	blockhash: string,
+	lastValidBlockHeight: number,
+	abortController: AbortController,
+	options?: TransactionExecutionOptions,
+): Promise<void> {
+	const startTime = Date.now();
+
+	const response = await connection.confirmTransaction(
+		{
+			signature,
+			blockhash,
+			lastValidBlockHeight,
+		},
+		options?.commitment,
+	);
+
+	if (response.value.err) {
+		const errorMsg =
+			typeof response.value.err === "string"
+				? response.value.err
+				: JSON.stringify(response.value.err, null, 2);
+		abortController.abort();
+		throw new Error(`Failed to confirm transaction: ${errorMsg}`);
+	}
+
+	const endTime = Date.now();
+	console.debug("Confirmed at: %o", new Date(endTime));
+	console.debug("Time elapsed: %d ms", endTime - startTime);
+	abortController.abort();
 }

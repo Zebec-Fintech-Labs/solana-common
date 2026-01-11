@@ -6,31 +6,18 @@ import { translateError, utils, web3 } from "@coral-xyz/anchor";
 import {
 	BASE_FEE_LAMPORTS,
 	DEFAULT_MAX_PRIORITY_FEE,
-	DEFAULT_SEND_TRANSACTION_INTERVAL,
 	LAMPORTS_PER_MICRO_LAMPORT,
 	MAX_COMPUTE_UNIT,
 } from "../constants";
 import { MultiTransactionSimulationError } from "../error";
 import {
+	confirmTransactionWithTimeout,
 	getRecentPriorityFee,
 	parseSolanaSendTransactionError,
 	PriorityLevel,
-	sleep,
+	sendTransactionWithRetry,
+	TransactionExecutionOptions,
 } from "../utils";
-
-/**
- * Enhanced transaction execution options
- */
-export type MultiTransactionExecutionOptions = web3.ConfirmOptions & {
-	enablePriorityFee?: boolean;
-	sendTransactionInterval?: number;
-	maxSendTransactionRetries?: number;
-	priorityLevel?: PriorityLevel;
-	maxPriorityFeeSol?: number;
-	exactPriorityFeeSol?: number;
-	confirmationTimeout?: number;
-	skipPreflight?: boolean;
-};
 
 /**
  * Transaction signing function type
@@ -219,7 +206,7 @@ export class MultiTransactionPayload {
 	private async addPriorityFeeInstructions(
 		instructions: web3.TransactionInstruction[],
 		computeUnit: number,
-		options?: MultiTransactionExecutionOptions,
+		options?: TransactionExecutionOptions,
 	): Promise<web3.TransactionInstruction[]> {
 		const hasComputeUnitLimitInstruction = instructions.some(
 			(instruction) =>
@@ -260,7 +247,7 @@ export class MultiTransactionPayload {
 	private async calculatePriorityFee(
 		instructions: web3.TransactionInstruction[],
 		computeUnit: number,
-		options?: MultiTransactionExecutionOptions,
+		options?: TransactionExecutionOptions,
 	): Promise<bigint> {
 		const exactPriorityFeeSol = options?.exactPriorityFeeSol
 			? BigNumber(options.exactPriorityFeeSol)
@@ -297,92 +284,10 @@ export class MultiTransactionPayload {
 	}
 
 	/**
-	 * Handles transaction sending with retry logic
-	 */
-	private async sendTransactionWithRetry(
-		signedTransaction: web3.VersionedTransaction,
-		signature: string,
-		lastValidBlockHeight: number,
-		options?: MultiTransactionExecutionOptions,
-	): Promise<void> {
-		const sendTransactionInterval =
-			options?.sendTransactionInterval ?? DEFAULT_SEND_TRANSACTION_INTERVAL;
-		const maxRetries = options?.maxSendTransactionRetries ?? Number.MAX_SAFE_INTEGER;
-
-		let retry = 0;
-		let blockHeight = await this._connection.getBlockHeight(options);
-
-		while (blockHeight < lastValidBlockHeight && retry < maxRetries) {
-			try {
-				await this._connection.sendRawTransaction(signedTransaction.serialize(), {
-					...options,
-					skipPreflight: options?.skipPreflight ?? false,
-				});
-
-				console.debug("Signature sent: %s at %o", signature, new Date());
-				retry++;
-				await sleep(sendTransactionInterval);
-				blockHeight = await this._connection.getBlockHeight(options);
-			} catch (err: any) {
-				if (err.message?.includes("This transaction has already been processed")) {
-					return;
-				}
-
-				if (err.message?.includes("Blockhash not found")) {
-					console.debug("Expected error (will retry):", err.message);
-					retry++;
-					await sleep(sendTransactionInterval);
-					blockHeight = await this._connection.getBlockHeight(options);
-					continue;
-				}
-
-				throw err;
-			}
-		}
-
-		if (blockHeight >= lastValidBlockHeight) {
-			throw new Error(MultiTransactionPayload.ERROR_MESSAGES.BLOCK_HEIGHT_EXCEEDED);
-		}
-	}
-
-	/**
-	 * Confirms transaction with timeout handling
-	 */
-	private async confirmTransactionWithTimeout(
-		signature: string,
-		blockhash: string,
-		lastValidBlockHeight: number,
-		options?: MultiTransactionExecutionOptions,
-	): Promise<void> {
-		const startTime = Date.now();
-
-		const response = await this._connection.confirmTransaction(
-			{
-				signature,
-				blockhash,
-				lastValidBlockHeight,
-			},
-			options?.commitment,
-		);
-
-		if (response.value.err) {
-			const errorMsg =
-				typeof response.value.err === "string"
-					? response.value.err
-					: JSON.stringify(response.value.err, null, 2);
-			throw new Error(`Failed to confirm transaction: ${errorMsg}`);
-		}
-
-		const endTime = Date.now();
-		console.debug("Confirmed at: %o", new Date(endTime));
-		console.debug("Time elapsed: %d ms", endTime - startTime);
-	}
-
-	/**
 	 * Signs, sends, and confirms transaction with enhanced error handling
 	 */
 	async execute(
-		options?: MultiTransactionExecutionOptions,
+		options?: TransactionExecutionOptions,
 	): Promise<MultiTransactionPayloadExecuteReturn> {
 		if (!this._signAllTransactions) {
 			throw new Error(MultiTransactionPayload.ERROR_MESSAGES.SIGN_FUNCTION_REQUIRED);
@@ -399,7 +304,7 @@ export class MultiTransactionPayload {
 				this.transactionsData.map(async (data, i) => {
 					const simulationResult = simulationResults.get(i);
 					const computeUnit = simulationResult?.value.unitsConsumed
-						? simulationResult.value.unitsConsumed + 300
+						? Math.floor(simulationResult.value.unitsConsumed * 1.2)
 						: MAX_COMPUTE_UNIT;
 
 					await this.addPriorityFeeInstructions(data.instructions, computeUnit, options);
@@ -417,16 +322,34 @@ export class MultiTransactionPayload {
 			try {
 				const signatureBuffer = signedTransaction.signatures[0]!;
 				const signature = utils.bytes.bs58.encode(signatureBuffer);
+				const abortController = new AbortController();
 
-				await Promise.all([
-					this.sendTransactionWithRetry(
-						signedTransaction,
-						signature,
-						lastValidBlockHeight,
-						options,
-					),
-					this.confirmTransactionWithTimeout(signature, blockhash, lastValidBlockHeight, options),
-				]);
+				try {
+					await Promise.all([
+						sendTransactionWithRetry(
+							this._connection,
+							signedTransaction,
+							signature,
+							lastValidBlockHeight,
+							abortController.signal,
+							options,
+						),
+						confirmTransactionWithTimeout(
+							this._connection,
+							signature,
+							blockhash,
+							lastValidBlockHeight,
+							abortController,
+							options,
+						).catch((err) => {
+							abortController.abort();
+							throw err;
+						}),
+					]);
+				} catch (err: any) {
+					abortController.abort();
+					throw err;
+				}
 				return signature;
 			} catch (err: any) {
 				throw parseSolanaSendTransactionError(err, this._errors);
