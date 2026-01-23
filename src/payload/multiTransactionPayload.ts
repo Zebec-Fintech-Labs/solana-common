@@ -306,7 +306,7 @@ export class MultiTransactionPayload {
 					const simulationResult = simulationResults.get(i);
 					const computeUnit = simulationResult?.value.unitsConsumed
 						? Math.floor(
-								(simulationResult.value.unitsConsumed + COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT) * 1.1,
+								(simulationResult.value.unitsConsumed + COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT) * 2,
 							)
 						: MAX_COMPUTE_UNIT;
 
