@@ -1,38 +1,38 @@
 {
-  "author": "Ashish Sapkota",
-  "dependencies": {
-    "@coral-xyz/anchor": "^0.31.1",
-    "bignumber.js": "^9.3.1"
-  },
-  "devDependencies": {
-    "@types/mocha": "^10.0.10",
-    "@types/node": "^24.3.1",
-    "dotenv": "^17.2.2",
-    "mocha": "^11.7.2",
-    "prettier": "^3.6.2",
-    "rimraf": "^6.0.1",
-    "ts-mocha": "^11.1.0",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.2"
-  },
-  "files": [
-    "dist"
-  ],
-  "homepage": "https://github.com/Zebec-Fintech-Labs/solana-common#README",
-  "license": "MIT",
-  "main": "dist/index.js",
-  "name": "@zebec-network/solana-common",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Zebec-Fintech-Labs/solana-common.git"
-  },
-  "scripts": {
-    "build": "npm run clean && tsc",
-    "clean": "rimraf ./dist",
-    "format": "npx @biomejs/biome format --write",
-    "prepare": "npm run build",
-    "test:single": "ts-mocha -p ./tsconfig.json -t 1000000 $()"
-  },
-  "types": "dist/index.d.ts",
-  "version": "2.3.1"
+	"author": "Ashish Sapkota",
+	"dependencies": {
+		"@coral-xyz/anchor": "^0.31.1",
+		"bignumber.js": "^9.3.1"
+	},
+	"devDependencies": {
+		"@types/mocha": "^10.0.10",
+		"@types/node": "^24.3.1",
+		"dotenv": "^17.2.2",
+		"mocha": "^11.7.2",
+		"prettier": "^3.6.2",
+		"rimraf": "^6.0.1",
+		"ts-mocha": "^11.1.0",
+		"ts-node": "^10.9.2",
+		"typescript": "^5.9.2"
+	},
+	"files": [
+		"dist"
+	],
+	"homepage": "https://github.com/Zebec-Fintech-Labs/solana-common#README",
+	"license": "MIT",
+	"main": "dist/index.js",
+	"name": "@zebec-network/solana-common",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Zebec-Fintech-Labs/solana-common.git"
+	},
+	"scripts": {
+		"build": "npm run clean && tsc",
+		"clean": "rimraf ./dist",
+		"format": "npx @biomejs/biome format --write",
+		"prepare": "npm run build",
+		"test:single": "ts-mocha -p ./tsconfig.json -t 1000000 $()"
+	},
+	"types": "dist/index.d.ts",
+	"version": "2.3.1"
 }

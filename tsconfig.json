@@ -65,7 +65,7 @@
 		// "allowUnreachableCode": true,                     /* Disable error reporting for unreachable code. */
 		/* Completeness */
 		// "skipDefaultLibCheck": true,                      /* Skip type checking .d.ts files that are included with TypeScript. */
-		"skipLibCheck": true, /* Skip type checking all .d.ts files. */
+		"skipLibCheck": true /* Skip type checking all .d.ts files. */,
 		/* Type Checking */
 		"strict": true /* Enable all strict type-checking options. */,
 		"strictNullChecks": true /* When type checking, take into account 'null' and 'undefined'. */,
@@ -104,11 +104,6 @@
 		// "maxNodeModuleJsDepth": 1,                        /* Specify the maximum folder depth used for checking JavaScript files from 'node_modules'. Only applicable with 'allowJs'. */
 		/* Emit */
 	},
-	"exclude": [
-		"node_modules",
-		"test"
-	],
-	"include": [
-		"src"
-	]
+	"exclude": ["node_modules", "test"],
+	"include": ["src"]
 }
