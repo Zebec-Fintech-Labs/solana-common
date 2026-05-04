@@ -1,7 +1,5 @@
-import assert from "assert";
-import { BigNumber } from "bignumber.js";
-
 import { translateError, utils, web3 } from "@coral-xyz/anchor";
+import { BigNumber } from "bignumber.js";
 
 import {
 	BASE_FEE_LAMPORTS,
@@ -14,16 +12,18 @@ import { MultiTransactionSimulationError } from "../error";
 import {
 	confirmTransactionWithTimeout,
 	getRecentPriorityFee,
+	type PriorityLevel,
 	parseSolanaSendTransactionError,
-	PriorityLevel,
 	sendTransactionWithRetry,
-	TransactionExecutionOptions,
+	type TransactionExecutionOptions,
 } from "../utils";
 
 /**
  * Transaction signing function type
  */
-export type SignAllTransactionsFunction = <T extends web3.Transaction | web3.VersionedTransaction>(
+export type SignAllTransactionsFunction = <
+	T extends web3.Transaction | web3.VersionedTransaction,
+>(
 	transactions: T[],
 ) => Promise<T[]>;
 
@@ -31,19 +31,21 @@ export type SignAllTransactionsFunction = <T extends web3.Transaction | web3.Ver
  * Enhanced transaction payload class with improved error handling and retry logic
  */
 
-export type MultiTransactionPayloadExecuteReturn = (PromiseSettledResult<string> & {
-	transactionData: {
-		readonly instructions: web3.TransactionInstruction[];
-		readonly feePayer: web3.PublicKey;
-		readonly signers?: web3.Signer[];
-		readonly addressLookupTableAccounts?: web3.AddressLookupTableAccount[];
-	};
-	transaction: web3.VersionedTransaction;
-})[];
+export type MultiTransactionPayloadExecuteReturn =
+	(PromiseSettledResult<string> & {
+		transactionData: {
+			readonly instructions: web3.TransactionInstruction[];
+			readonly feePayer: web3.PublicKey;
+			readonly signers?: web3.Signer[];
+			readonly addressLookupTableAccounts?: web3.AddressLookupTableAccount[];
+		};
+		transaction: web3.VersionedTransaction;
+	})[];
 
 export class MultiTransactionPayload {
 	private static readonly ERROR_MESSAGES = {
-		SIGN_FUNCTION_REQUIRED: "signTransaction is required to execute transaction payload.",
+		SIGN_FUNCTION_REQUIRED:
+			"signTransaction is required to execute transaction payload.",
 		BLOCK_HEIGHT_EXCEEDED: "Block height exceeded before confirmation",
 		CONFIRMATION_TIMEOUT: "Transaction confirmation timed out",
 	} as const;
@@ -80,7 +82,12 @@ export class MultiTransactionPayload {
 		}[],
 		signAllTransactions?: SignAllTransactionsFunction,
 	) {
-		return new MultiTransactionPayload(connection, errors, transactionData, signAllTransactions);
+		return new MultiTransactionPayload(
+			connection,
+			errors,
+			transactionData,
+			signAllTransactions,
+		);
 	}
 
 	/**
@@ -106,7 +113,9 @@ export class MultiTransactionPayload {
 	 */
 	async simulate(
 		options?: web3.SimulateTransactionConfig,
-	): Promise<Map<number, web3.RpcResponseAndContext<web3.SimulatedTransactionResponse>>> {
+	): Promise<
+		Map<number, web3.RpcResponseAndContext<web3.SimulatedTransactionResponse>>
+	> {
 		const { blockhash } = await this._connection.getLatestBlockhash(options);
 
 		const transactions = this.transactionsData.map((data) => {
@@ -129,18 +138,23 @@ export class MultiTransactionPayload {
 
 			if (options?.sigVerify) {
 				if (!this._signAllTransactions) {
-					throw new Error(MultiTransactionPayload.ERROR_MESSAGES.SIGN_FUNCTION_REQUIRED);
+					throw new Error(
+						MultiTransactionPayload.ERROR_MESSAGES.SIGN_FUNCTION_REQUIRED,
+					);
 				}
 
 				signedTransactions = await this._signAllTransactions(transactions);
 			}
 
-			const simulationErrors: { index: number; error: any }[] = [];
+			const simulationErrors: { index: number; error: unknown }[] = [];
 
-			let simulationResult = await Promise.all(
+			const simulationResult = await Promise.all(
 				signedTransactions.map(async (signedTransaction, i) => {
 					try {
-						const result = await this._connection.simulateTransaction(signedTransaction, options);
+						const result = await this._connection.simulateTransaction(
+							signedTransaction,
+							options,
+						);
 
 						return [i, result];
 					} catch (error) {
@@ -159,7 +173,10 @@ export class MultiTransactionPayload {
 						JSON.stringify(
 							simulationErrors.map((e) => ({
 								index: e.index,
-								error: e.error.message ?? JSON.stringify(e.error, null, 2),
+								error:
+									e.error instanceof Error
+										? e.error.message
+										: JSON.stringify(e.error, null, 2),
 							})),
 							null,
 							2,
@@ -182,7 +199,9 @@ export class MultiTransactionPayload {
 		}
 	}
 
-	async buildVersionTransactions(blockhash: string): Promise<web3.VersionedTransaction[]> {
+	async buildVersionTransactions(
+		blockhash: string,
+	): Promise<web3.VersionedTransaction[]> {
 		return await Promise.all(
 			this.transactionsData.map(async (data) => {
 				const message = new web3.TransactionMessage({
@@ -212,17 +231,21 @@ export class MultiTransactionPayload {
 		const hasComputeUnitLimitInstruction = instructions.some(
 			(instruction) =>
 				instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
-				web3.ComputeBudgetInstruction.decodeInstructionType(instruction) === "SetComputeUnitLimit",
+				web3.ComputeBudgetInstruction.decodeInstructionType(instruction) ===
+					"SetComputeUnitLimit",
 		);
 
 		const hasComputeUnitPriceInstruction = instructions.some(
 			(instruction) =>
 				instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
-				web3.ComputeBudgetInstruction.decodeInstructionType(instruction) === "SetComputeUnitPrice",
+				web3.ComputeBudgetInstruction.decodeInstructionType(instruction) ===
+					"SetComputeUnitPrice",
 		);
 
 		if (!hasComputeUnitLimitInstruction) {
-			instructions.unshift(web3.ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnit }));
+			instructions.unshift(
+				web3.ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnit }),
+			);
 		}
 
 		if (!hasComputeUnitPriceInstruction) {
@@ -266,7 +289,8 @@ export class MultiTransactionPayload {
 		}
 
 		const priorityLevel: PriorityLevel = options?.priorityLevel ?? "medium";
-		const maxPriorityFeeSol = options?.maxPriorityFeeSol ?? DEFAULT_MAX_PRIORITY_FEE;
+		const maxPriorityFeeSol =
+			options?.maxPriorityFeeSol ?? DEFAULT_MAX_PRIORITY_FEE;
 
 		const maxPriorityFeePerCU = BigNumber(maxPriorityFeeSol)
 			.times(web3.LAMPORTS_PER_SOL)
@@ -291,7 +315,9 @@ export class MultiTransactionPayload {
 		options?: TransactionExecutionOptions,
 	): Promise<MultiTransactionPayloadExecuteReturn> {
 		if (!this._signAllTransactions) {
-			throw new Error(MultiTransactionPayload.ERROR_MESSAGES.SIGN_FUNCTION_REQUIRED);
+			throw new Error(
+				MultiTransactionPayload.ERROR_MESSAGES.SIGN_FUNCTION_REQUIRED,
+			);
 		}
 
 		const enablePriorityFee = options?.enablePriorityFee ?? true;
@@ -306,16 +332,23 @@ export class MultiTransactionPayload {
 					const simulationResult = simulationResults.get(i);
 					const computeUnit = simulationResult?.value.unitsConsumed
 						? Math.floor(
-								(simulationResult.value.unitsConsumed + COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT) * 2,
+								(simulationResult.value.unitsConsumed +
+									COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT) *
+									2,
 							)
 						: MAX_COMPUTE_UNIT;
 
-					await this.addPriorityFeeInstructions(data.instructions, computeUnit, options);
+					await this.addPriorityFeeInstructions(
+						data.instructions,
+						computeUnit,
+						options,
+					);
 				}),
 			);
 		}
 
-		const { lastValidBlockHeight, blockhash } = await this._connection.getLatestBlockhash(options);
+		const { lastValidBlockHeight, blockhash } =
+			await this._connection.getLatestBlockhash(options);
 
 		const transactions = await this.buildVersionTransactions(blockhash);
 
@@ -323,6 +356,7 @@ export class MultiTransactionPayload {
 
 		const promises = signedTransactions.map(async (signedTransaction) => {
 			try {
+				// biome-ignore lint/style/noNonNullAssertion: after signing, there should be at least one signature
 				const signatureBuffer = signedTransaction.signatures[0]!;
 				const signature = utils.bytes.bs58.encode(signatureBuffer);
 				const abortController = new AbortController();
@@ -349,25 +383,31 @@ export class MultiTransactionPayload {
 							throw err;
 						}),
 					]);
-				} catch (err: any) {
+				} catch (err: unknown) {
 					abortController.abort();
 					throw err;
 				}
 				return signature;
-			} catch (err: any) {
+			} catch (err: unknown) {
 				throw parseSolanaSendTransactionError(err, this._errors);
 			}
 		});
 
 		const results = await Promise.allSettled(promises);
 
-		assert(results.length === this.transactionsData.length, "Results length mismatch");
-		assert(results.length === transactions.length, "Results length mismatch");
+		if (results.length !== this.transactionsData.length) {
+			throw new Error("Results length mismatch");
+		}
+		if (results.length !== transactions.length) {
+			throw new Error("Results length mismatch");
+		}
 
 		const resultsWithAdditionalData = results.map((result, i) => {
 			return {
 				...result,
+				// biome-ignore lint/style/noNonNullAssertion: length checks ensure these are not null
 				transactionData: this.transactionsData[i]!,
+				// biome-ignore lint/style/noNonNullAssertion: length checks ensure these are not null
 				transaction: transactions[i]!,
 			};
 		});
