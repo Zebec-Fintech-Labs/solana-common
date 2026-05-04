@@ -509,6 +509,7 @@ export async function sendTransactionWithRetry(
 			retry++;
 			await sleep(sendTransactionInterval);
 			blockHeight = await connection.getBlockHeight(options);
+			// biome-ignore lint/suspicious/noExplicitAny: error can be of any type and needs to be handled gracefully
 		} catch (err: any) {
 			if (
 				err.message?.includes("This transaction has already been processed")
