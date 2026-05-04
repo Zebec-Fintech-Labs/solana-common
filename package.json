@@ -2,7 +2,7 @@
 	"author": "Ashish Sapkota",
 	"dependencies": {
 		"@coral-xyz/anchor": "^0.31.1",
-		"bignumber.js": "^9.3.1"
+		"bignumber.js": "^11.1.1"
 	},
 	"devDependencies": {
 		"@types/mocha": "^10.0.10",
@@ -31,7 +31,7 @@
 		"clean": "rimraf ./dist",
 		"format": "npx @biomejs/biome format --write",
 		"prepare": "npm run build",
-		"test:single": "ts-mocha -p ./tsconfig.json -t 1000000 $()"
+		"test:single": "ts-mocha -p ./tsconfig.json -t 1000000"
 	},
 	"types": "dist/index.d.ts",
 	"version": "2.3.1"

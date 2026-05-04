@@ -1,5 +1,5 @@
 import { translateError, utils, web3 } from "@coral-xyz/anchor";
-import { BigNumber } from "bignumber.js";
+import BigNumber from "bignumber.js";
 
 import {
 	BASE_FEE_LAMPORTS,

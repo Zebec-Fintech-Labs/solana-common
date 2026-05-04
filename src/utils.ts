@@ -6,8 +6,7 @@ import {
 	translateError,
 	web3,
 } from "@coral-xyz/anchor";
-import { BigNumber } from "bignumber.js";
-
+import BigNumber from "bignumber.js";
 import {
 	ASSOCIATED_TOKEN_PROGRAM_ID,
 	DEFAULT_SEND_TRANSACTION_INTERVAL,

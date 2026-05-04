@@ -1,5 +1,5 @@
 import { utils, web3 } from "@coral-xyz/anchor";
-import { BigNumber } from "bignumber.js";
+import BigNumber from "bignumber.js";
 
 // Transaction timing constants (in milliseconds)
 export const DEFAULT_SEND_TRANSACTION_INTERVAL = 1000;
