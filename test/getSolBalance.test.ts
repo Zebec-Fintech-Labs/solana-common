@@ -17,7 +17,10 @@ describe("getSolBalance()", () => {
 		assert(balanceA);
 		assert.strictEqual(balanceA, "4.946163556");
 
-		const balanceB = await getSolBalance(connection, "KjC2CMdFWrqULujEECU4W2fQhdZ36vXn3XA8u8DpHqD");
+		const balanceB = await getSolBalance(
+			connection,
+			"KjC2CMdFWrqULujEECU4W2fQhdZ36vXn3XA8u8DpHqD",
+		);
 
 		assert(balanceB);
 		assert.strictEqual(balanceB, "0");

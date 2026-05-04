@@ -101,7 +101,9 @@ describe("TransactionPayload", () => {
 						...result,
 						transaction: {
 							...result.transaction,
-							signatures: result.transaction.signatures.map((s) => utils.bytes.bs58.encode(s)),
+							signatures: result.transaction.signatures.map((s) =>
+								utils.bytes.bs58.encode(s),
+							),
 						},
 					};
 				}),

@@ -617,7 +617,9 @@ describe("replaceNonZeroAndSortPrioritizationFeesAsc", () => {
 		const sorted = replaceNonZeroAndSortPrioritizationFeesAsc(fees);
 
 		assert(
-			BigNumber(sorted[0].prioritizationFee).comparedTo(sorted[1].prioritizationFee) === -1,
+			BigNumber(sorted[0].prioritizationFee).comparedTo(
+				sorted[1].prioritizationFee,
+			) === -1,
 			"Array is not sorted in ascending",
 		);
 		assert(sorted.some((item) => !Number.isNaN(item.prioritizationFee)));
