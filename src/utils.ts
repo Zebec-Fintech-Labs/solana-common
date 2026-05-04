@@ -1,13 +1,12 @@
-import { BigNumber } from "bignumber.js";
-
 import {
-	Address,
+	type Address,
 	AnchorError,
 	ProgramError,
 	translateAddress,
 	translateError,
 	web3,
 } from "@coral-xyz/anchor";
+import { BigNumber } from "bignumber.js";
 
 import {
 	ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -29,6 +28,7 @@ export async function getMintDecimals(
 	mint: web3.PublicKey,
 ): Promise<number> {
 	if (mintToDecimalsMap.has(mint.toString())) {
+		// biome-ignore lint/style/noNonNullAssertion: there is a check for the presence of the key above
 		return mintToDecimalsMap.get(mint.toString())!;
 	} else {
 		const info = await connection.getTokenSupply(mint);
@@ -69,7 +69,11 @@ export function createAssociatedTokenAccountInstruction(
 		{ pubkey: associatedToken, isSigner: false, isWritable: true },
 		{ pubkey: owner, isSigner: false, isWritable: false },
 		{ pubkey: mint, isSigner: false, isWritable: false },
-		{ pubkey: web3.SystemProgram.programId, isSigner: false, isWritable: false },
+		{
+			pubkey: web3.SystemProgram.programId,
+			isSigner: false,
+			isWritable: false,
+		},
 		{ pubkey: programId, isSigner: false, isWritable: false },
 	];
 
@@ -155,7 +159,10 @@ export async function getSolBalance(
 	address: Address,
 	commitmentOrConfig: web3.Commitment | web3.GetBalanceConfig = "finalized",
 ): Promise<FormattedBalance> {
-	const balance = await connection.getBalance(translateAddress(address), commitmentOrConfig);
+	const balance = await connection.getBalance(
+		translateAddress(address),
+		commitmentOrConfig,
+	);
 
 	return formatSol(balance);
 }
@@ -175,16 +182,23 @@ export async function getTokenBalances(
 		),
 	);
 
-	const accountsInfo = await connection.getMultipleParsedAccounts(associatedTokenAccounts, config);
+	const accountsInfo = await connection.getMultipleParsedAccounts(
+		associatedTokenAccounts,
+		config,
+	);
 
-	let balances: Record<string, FormattedBalance> = {};
-	accountsInfo.value.map((accountInfo, i) => {
+	const balances: Record<string, FormattedBalance> = {};
+	accountsInfo.value.forEach((accountInfo, i) => {
 		if (!accountInfo) {
+			// biome-ignore lint/style/noNonNullAssertion: foreach tokenmint a accountinfo exists
 			balances[tokenMints[i]!.toString()] = "0";
 		} else {
 			if (Buffer.isBuffer(accountInfo.data)) {
-				throw new Error("Account did not parsed. Account may not Associated Token Account.");
+				throw new Error(
+					"Account did not parsed. Account may not Associated Token Account.",
+				);
 			} else {
+				// biome-ignore lint/style/noNonNullAssertion: foreach tokenmint a accountinfo exists
 				balances[tokenMints[i]!.toString()] = formatToken(
 					accountInfo.data.parsed.info.tokenAmount.amount,
 					accountInfo.data.parsed.info.tokenAmount.decimals,
@@ -196,9 +210,13 @@ export async function getTokenBalances(
 	return balances;
 }
 
-export function parseSolanaSendTransactionError(error: unknown, idlErrors: Map<number, string>) {
+export function parseSolanaSendTransactionError(
+	error: unknown,
+	idlErrors: Map<number, string>,
+) {
+	console.debug("Raw error from transaction execution:", error);
 	const translatedError = translateError(error, idlErrors);
-	console.debug("Transaction execution error:", translatedError);
+	console.debug("Translated error:", translatedError);
 
 	const jupError = parseJupErrors(translatedError);
 
@@ -206,22 +224,17 @@ export function parseSolanaSendTransactionError(error: unknown, idlErrors: Map<n
 		return jupError;
 	}
 
-	const insufficientFundsError = parseInsufficientFundsErrorMessage(translatedError);
+	const insufficientFundsError =
+		parseInsufficientFundsErrorMessage(translatedError);
 
 	if (insufficientFundsError) {
 		return insufficientFundsError;
 	}
 
 	if (translatedError instanceof AnchorError) {
-		return new Error(
-			`Program: ${translatedError.program.toString()} failed. Code: ${translatedError.error.errorCode.code} Number: ${translatedError.error.errorCode.number} Message: ${translatedError.error.errorMessage}`,
-		);
+		return parseAnchorError(translatedError);
 	} else if (translatedError instanceof ProgramError) {
-		return new Error(
-			`Program ` +
-				`${translatedError.program ? translatedError.program.toString() + " " : ""}` +
-				`failed: Code: ${translatedError.code} Message: ${translatedError.msg}`,
-		);
+		return parseProgramError(translatedError);
 	} else {
 		return "transactionMessage" in translatedError
 			? new Error(translatedError.transactionMessage)
@@ -229,8 +242,30 @@ export function parseSolanaSendTransactionError(error: unknown, idlErrors: Map<n
 	}
 }
 
-function parseJupErrors(translatedError: any) {
-	if (!translatedError.message) {
+function parseProgramError(translatedError: ProgramError) {
+	return new Error(
+		`Program ` +
+			`${translatedError.program ? `${translatedError.program.toString()} ` : ""}` +
+			`failed: Code: ${translatedError.code} Message: ${translatedError.msg}`,
+	);
+}
+
+function parseAnchorError(translatedError: AnchorError) {
+	return new Error(
+		`Program: ${translatedError.program.toString()} failed. Code: ${translatedError.error.errorCode.code} Number: ${translatedError.error.errorCode.number} Message: ${translatedError.error.errorMessage}` +
+			`${translatedError.error.origin ? ` Origin: ${typeof translatedError.error.origin === "string" ? translatedError.error.origin : `${translatedError.error.origin.file}:${translatedError.error.origin.line}`}` : ""}` +
+			`${translatedError.error.comparedValues ? ` Compared Values: Left ${translatedError.error.comparedValues[0]?.toString()} Right ${translatedError.error.comparedValues[1]?.toString()}` : ""}`,
+	);
+}
+
+function parseJupErrors(translatedError: unknown) {
+	if (
+		!translatedError ||
+		typeof translatedError !== "object" ||
+		!("message" in translatedError) ||
+		!translatedError.message ||
+		typeof translatedError.message !== "string"
+	) {
 		return null;
 	}
 
@@ -287,8 +322,16 @@ function parseJupErrors(translatedError: any) {
 	return null;
 }
 
-function parseInsufficientFundsErrorMessage(translatedError: any): Error | null {
-	if (!translatedError.message) {
+function parseInsufficientFundsErrorMessage(
+	translatedError: unknown,
+): Error | null {
+	if (
+		!translatedError ||
+		typeof translatedError !== "object" ||
+		!("message" in translatedError) ||
+		!translatedError.message ||
+		typeof translatedError.message !== "string"
+	) {
 		return null;
 	}
 
@@ -314,9 +357,14 @@ export function replaceNonZeroAndSortPrioritizationFeesAsc(
 	recentPrioritizationFees: web3.RecentPrioritizationFees[],
 ): web3.RecentPrioritizationFees[] {
 	return recentPrioritizationFees
-		.filter((fee) => !Number.isNaN(fee.prioritizationFee) && fee.prioritizationFee > 0)
+		.filter(
+			(fee) =>
+				!Number.isNaN(fee.prioritizationFee) && fee.prioritizationFee > 0,
+		)
 		.sort((a, b) => {
-			return BigNumber(a.prioritizationFee).comparedTo(b.prioritizationFee) ?? 0;
+			return (
+				BigNumber(a.prioritizationFee).comparedTo(b.prioritizationFee) ?? 0
+			);
 		});
 }
 
@@ -341,15 +389,23 @@ export async function getRecentPriorityFee(
 ): Promise<BigNumber> {
 	try {
 		const lockedWritableAccounts = [
-			...new Set(instructions.flatMap((ix) => [...ix.keys.map((key) => key.pubkey), ix.programId])),
+			...new Set(
+				instructions.flatMap((ix) => [
+					...ix.keys.map((key) => key.pubkey),
+					ix.programId,
+				]),
+			),
 		];
 
-		const recentPrioritizationFees = await connection.getRecentPrioritizationFees({
-			lockedWritableAccounts,
-		});
+		const recentPrioritizationFees =
+			await connection.getRecentPrioritizationFees({
+				lockedWritableAccounts,
+			});
 
-		const sortedNonZeroList = replaceNonZeroAndSortPrioritizationFeesAsc(recentPrioritizationFees);
-		console.log("recent Priority fees:", sortedNonZeroList);
+		const sortedNonZeroList = replaceNonZeroAndSortPrioritizationFeesAsc(
+			recentPrioritizationFees,
+		);
+		// console.debug("recent Priority fees:", sortedNonZeroList);
 
 		let medianFee = BigNumber(0);
 
@@ -357,17 +413,23 @@ export async function getRecentPriorityFee(
 			const midIndex = Math.floor(sortedNonZeroList.length / 2);
 			medianFee =
 				sortedNonZeroList.length % 2 !== 0
-					? BigNumber(sortedNonZeroList[midIndex]!.prioritizationFee).decimalPlaces(
-							0,
-							BigNumber.ROUND_FLOOR,
-						)
-					: BigNumber(sortedNonZeroList[midIndex - 1]!.prioritizationFee)
+					? BigNumber(
+							// biome-ignore lint/style/noNonNullAssertion: mid index is calculated based on length
+							sortedNonZeroList[midIndex]!.prioritizationFee,
+						).decimalPlaces(0, BigNumber.ROUND_FLOOR)
+					: // biome-ignore lint/style/noNonNullAssertion: mid index is calculated based on length
+						BigNumber(sortedNonZeroList[midIndex - 1]!.prioritizationFee)
+							// biome-ignore lint/style/noNonNullAssertion: mid index is calculated based on length
 							.plus(sortedNonZeroList[midIndex]!.prioritizationFee)
 							.div(2)
 							.decimalPlaces(0, BigNumber.ROUND_FLOOR);
 		}
 
-		console.debug("Median fee for priority level %s: %s", priorityLevel, medianFee.toFixed());
+		// console.debug(
+		// 	"Median fee for priority level %s: %s",
+		// 	priorityLevel,
+		// 	medianFee.toFixed(),
+		// );
 
 		// Apply multiplier based on priority level
 		const multipliers: Record<PriorityLevel, number> = {
@@ -380,11 +442,14 @@ export async function getRecentPriorityFee(
 			.times(multipliers[priorityLevel])
 			.decimalPlaces(0, BigNumber.ROUND_CEIL);
 
-		console.debug("Calculated fee:", calculatedFee.toFixed());
+		// console.debug("Calculated fee:", calculatedFee.toFixed());
 
 		return BigNumber.min(calculatedFee, maxFeeCap);
 	} catch (error) {
-		console.warn("Failed to fetch recent priority fees, using fallback:", error);
+		console.warn(
+			"Failed to fetch recent priority fees, using fallback:",
+			error,
+		);
 		// Fallback to a reasonable default based on priority level
 		const fallbackFees: Record<PriorityLevel, number> = {
 			low: 1000,
@@ -421,13 +486,18 @@ export async function sendTransactionWithRetry(
 ): Promise<void> {
 	const sendTransactionInterval =
 		options?.sendTransactionInterval ?? DEFAULT_SEND_TRANSACTION_INTERVAL;
-	const maxRetries = options?.maxSendTransactionRetries ?? Number.MAX_SAFE_INTEGER;
+	const maxRetries =
+		options?.maxSendTransactionRetries ?? Number.MAX_SAFE_INTEGER;
 
 	let retry = 0;
 	let blockHeight = await connection.getBlockHeight(options);
-	let serializedTransaction = signedTransaction.serialize();
+	const serializedTransaction = signedTransaction.serialize();
 
-	while (blockHeight < lastValidBlockHeight && retry < maxRetries && !abortSignal.aborted) {
+	while (
+		blockHeight < lastValidBlockHeight &&
+		retry < maxRetries &&
+		!abortSignal.aborted
+	) {
 		try {
 			console.debug("Send... Attempt #%d", retry + 1);
 			await connection.sendRawTransaction(serializedTransaction, {
@@ -440,8 +510,12 @@ export async function sendTransactionWithRetry(
 			await sleep(sendTransactionInterval);
 			blockHeight = await connection.getBlockHeight(options);
 		} catch (err: any) {
-			if (err.message?.includes("This transaction has already been processed")) {
-				console.debug("Transaction already processed. Exiting send retry loop.");
+			if (
+				err.message?.includes("This transaction has already been processed")
+			) {
+				console.debug(
+					"Transaction already processed. Exiting send retry loop.",
+				);
 				return;
 			}
 
