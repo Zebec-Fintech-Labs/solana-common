@@ -1,6 +1,5 @@
-import { BigNumber } from "bignumber.js";
-
 import { translateError, utils, web3 } from "@coral-xyz/anchor";
+import { BigNumber } from "bignumber.js";
 
 import {
 	BASE_FEE_LAMPORTS,
@@ -12,16 +11,18 @@ import {
 import {
 	confirmTransactionWithTimeout,
 	getRecentPriorityFee,
+	type PriorityLevel,
 	parseSolanaSendTransactionError,
-	PriorityLevel,
 	sendTransactionWithRetry,
-	TransactionExecutionOptions,
+	type TransactionExecutionOptions,
 } from "../utils";
 
 /**
  * Transaction signing function type
  */
-export type SignTransactionFunction = <T extends web3.Transaction | web3.VersionedTransaction>(
+export type SignTransactionFunction = <
+	T extends web3.Transaction | web3.VersionedTransaction,
+>(
 	transaction: T,
 ) => Promise<T>;
 
@@ -30,7 +31,8 @@ export type SignTransactionFunction = <T extends web3.Transaction | web3.Version
  */
 export class TransactionPayload {
 	private static readonly ERROR_MESSAGES = {
-		SIGN_FUNCTION_REQUIRED: "signTransaction is required to execute transaction payload.",
+		SIGN_FUNCTION_REQUIRED:
+			"signTransaction is required to execute transaction payload.",
 		CONFIRMATION_TIMEOUT: "Transaction confirmation timed out",
 	} as const;
 
@@ -76,13 +78,18 @@ export class TransactionPayload {
 					transaction.sign(this.transactionData.signers);
 				}
 				if (!this._signTransaction) {
-					throw new Error(TransactionPayload.ERROR_MESSAGES.SIGN_FUNCTION_REQUIRED);
+					throw new Error(
+						TransactionPayload.ERROR_MESSAGES.SIGN_FUNCTION_REQUIRED,
+					);
 				}
 				signedTransaction = await this._signTransaction(transaction);
 			}
 
-			return await this._connection.simulateTransaction(signedTransaction, options);
-		} catch (err: any) {
+			return await this._connection.simulateTransaction(
+				signedTransaction,
+				options,
+			);
+		} catch (err: unknown) {
 			const translatedError = translateError(err, this._errors);
 			console.debug("Simulation error:", translatedError);
 			throw translatedError;
@@ -111,26 +118,35 @@ export class TransactionPayload {
 		computeUnit: number,
 		options?: TransactionExecutionOptions,
 	): Promise<web3.TransactionInstruction[]> {
-		const hasComputeUnitLimitInstruction = this.transactionData.instructions.some(
-			(instruction) =>
-				instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
-				web3.ComputeBudgetInstruction.decodeInstructionType(instruction) === "SetComputeUnitLimit",
-		);
+		const hasComputeUnitLimitInstruction =
+			this.transactionData.instructions.some(
+				(instruction) =>
+					instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
+					web3.ComputeBudgetInstruction.decodeInstructionType(instruction) ===
+						"SetComputeUnitLimit",
+			);
 
-		const hasComputeUnitPriceInstruction = this.transactionData.instructions.some(
-			(instruction) =>
-				instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
-				web3.ComputeBudgetInstruction.decodeInstructionType(instruction) === "SetComputeUnitPrice",
-		);
+		const hasComputeUnitPriceInstruction =
+			this.transactionData.instructions.some(
+				(instruction) =>
+					instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
+					web3.ComputeBudgetInstruction.decodeInstructionType(instruction) ===
+						"SetComputeUnitPrice",
+			);
 
 		const newInstructions: web3.TransactionInstruction[] = [];
 
 		if (!hasComputeUnitLimitInstruction) {
-			newInstructions.push(web3.ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnit }));
+			newInstructions.push(
+				web3.ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnit }),
+			);
 		}
 
 		if (!hasComputeUnitPriceInstruction) {
-			const priorityFeeInMicroLamports = await this.calculatePriorityFee(computeUnit, options);
+			const priorityFeeInMicroLamports = await this.calculatePriorityFee(
+				computeUnit,
+				options,
+			);
 
 			newInstructions.push(
 				web3.ComputeBudgetProgram.setComputeUnitPrice({
@@ -165,7 +181,8 @@ export class TransactionPayload {
 		}
 
 		const priorityLevel: PriorityLevel = options?.priorityLevel ?? "medium";
-		const maxPriorityFeeSol = options?.maxPriorityFeeSol ?? DEFAULT_MAX_PRIORITY_FEE;
+		const maxPriorityFeeSol =
+			options?.maxPriorityFeeSol ?? DEFAULT_MAX_PRIORITY_FEE;
 
 		const maxPriorityFeePerCU = BigNumber(maxPriorityFeeSol)
 			.times(web3.LAMPORTS_PER_SOL)
@@ -186,7 +203,9 @@ export class TransactionPayload {
 	/**
 	 * Signs, sends, and confirms transaction with enhanced error handling
 	 */
-	async execute(options?: TransactionExecutionOptions): Promise<web3.TransactionSignature> {
+	async execute(
+		options?: TransactionExecutionOptions,
+	): Promise<web3.TransactionSignature> {
 		if (!this._signTransaction) {
 			throw new Error(TransactionPayload.ERROR_MESSAGES.SIGN_FUNCTION_REQUIRED);
 		}
@@ -200,20 +219,31 @@ export class TransactionPayload {
 				const simulationResult = await this.simulate(options);
 				const computeUnit = simulationResult.value.unitsConsumed
 					? Math.floor(
-							(simulationResult.value.unitsConsumed + COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT) * 2,
+							(simulationResult.value.unitsConsumed +
+								COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT) *
+								2,
 						)
 					: MAX_COMPUTE_UNIT;
 
 				// Get priority fee instructions but don't modify transactionData
-				priorityFeeInstructions = await this.getPriorityFeeInstructions(computeUnit, options);
+				priorityFeeInstructions = await this.getPriorityFeeInstructions(
+					computeUnit,
+					options,
+				);
 			}
 
 			const { lastValidBlockHeight, blockhash } =
 				await this._connection.getLatestBlockhash(options);
-			console.debug("Compute Budget instructions:", JSON.stringify(priorityFeeInstructions));
+			// console.debug(
+			// 	"Compute Budget instructions:",
+			// 	JSON.stringify(priorityFeeInstructions),
+			// );
 
 			// Build transaction with priority fee instructions prepended
-			const allInstructions = [...priorityFeeInstructions, ...this.transactionData.instructions];
+			const allInstructions = [
+				...priorityFeeInstructions,
+				...this.transactionData.instructions,
+			];
 			const message = new web3.TransactionMessage({
 				instructions: allInstructions,
 				payerKey: this.transactionData.feePayer,
@@ -227,6 +257,7 @@ export class TransactionPayload {
 			}
 
 			const signedTransaction = await this._signTransaction(transaction);
+			// biome-ignore lint/style/noNonNullAssertion: after signing, there should be at least one signature
 			const signatureBuffer = signedTransaction.signatures[0]!;
 			const signature = utils.bytes.bs58.encode(signatureBuffer);
 
@@ -255,13 +286,13 @@ export class TransactionPayload {
 						throw err;
 					}),
 				]);
-			} catch (err: any) {
+			} catch (err: unknown) {
 				abortController.abort();
 				throw err;
 			}
 
 			return signature;
-		} catch (err: any) {
+		} catch (err: unknown) {
 			throw parseSolanaSendTransactionError(err, this._errors);
 		}
 	}
