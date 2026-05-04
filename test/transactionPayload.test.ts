@@ -1,5 +1,5 @@
 import { web3 } from "@coral-xyz/anchor";
-
+import { describe, it } from "mocha";
 import { TransactionPayload } from "../src";
 import { getConnection, getWallets } from "./shared";
 
@@ -42,6 +42,7 @@ describe("TransactionPayload", () => {
 		);
 
 		const signature = await payload.execute({ commitment: "confirmed" });
+		console.log("signature:", signature);
 	});
 
 	it("should make transaction", async () => {
