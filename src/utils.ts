@@ -593,7 +593,7 @@ export async function sendAndConfirm({
 		signedTransaction instanceof web3.VersionedTransaction
 			? signedTransaction.signatures[0]
 			: signedTransaction.signature;
-	if (!signatureBuffer) {
+	if (!signatureBuffer || signatureBuffer.every((byte) => byte === 0)) {
 		throw new Error("TransactionNotSigned: Signature is empty in transaction");
 	}
 	const signature = utils.bytes.bs58.encode(signatureBuffer);
