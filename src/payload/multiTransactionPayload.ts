@@ -1,4 +1,4 @@
-import { translateError, utils, web3 } from "@coral-xyz/anchor";
+import { translateError, web3 } from "@coral-xyz/anchor";
 import BigNumber from "bignumber.js";
 
 import {
@@ -10,12 +10,10 @@ import {
 } from "../constants";
 import { MultiTransactionSimulationError } from "../error";
 import {
-	confirmTransactionWithTimeout,
 	getRecentPriorityFee,
 	type PriorityLevel,
 	parseSolanaSendTransactionError,
 	sendAndConfirm,
-	sendTransactionWithRetry,
 	type TransactionExecutionOptions,
 } from "../utils";
 
@@ -171,17 +169,17 @@ export class MultiTransactionPayload {
 			if (simulationErrors.length) {
 				throw new MultiTransactionSimulationError(
 					"One or more simulation failed:\n" +
-						JSON.stringify(
-							simulationErrors.map((e) => ({
-								index: e.index,
-								error:
-									e.error instanceof Error
-										? e.error.message
-										: JSON.stringify(e.error, null, 2),
-							})),
-							null,
-							2,
-						),
+					JSON.stringify(
+						simulationErrors.map((e) => ({
+							index: e.index,
+							error:
+								e.error instanceof Error
+									? e.error.message
+									: JSON.stringify(e.error, null, 2),
+						})),
+						null,
+						2,
+					),
 					simulationErrors,
 				);
 			}
@@ -233,14 +231,14 @@ export class MultiTransactionPayload {
 			(instruction) =>
 				instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
 				web3.ComputeBudgetInstruction.decodeInstructionType(instruction) ===
-					"SetComputeUnitLimit",
+				"SetComputeUnitLimit",
 		);
 
 		const hasComputeUnitPriceInstruction = instructions.some(
 			(instruction) =>
 				instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
 				web3.ComputeBudgetInstruction.decodeInstructionType(instruction) ===
-					"SetComputeUnitPrice",
+				"SetComputeUnitPrice",
 		);
 
 		if (!hasComputeUnitLimitInstruction) {
@@ -333,10 +331,10 @@ export class MultiTransactionPayload {
 					const simulationResult = simulationResults.get(i);
 					const computeUnit = simulationResult?.value.unitsConsumed
 						? Math.floor(
-								(simulationResult.value.unitsConsumed +
-									COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT) *
-									2,
-							)
+							(simulationResult.value.unitsConsumed +
+								COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT) *
+							2,
+						)
 						: MAX_COMPUTE_UNIT;
 
 					await this.addPriorityFeeInstructions(

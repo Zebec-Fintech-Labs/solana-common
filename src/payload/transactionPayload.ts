@@ -1,4 +1,4 @@
-import { translateError, utils, web3 } from "@coral-xyz/anchor";
+import { translateError, web3 } from "@coral-xyz/anchor";
 import BigNumber from "bignumber.js";
 
 import {
@@ -9,12 +9,10 @@ import {
 	MAX_COMPUTE_UNIT,
 } from "../constants";
 import {
-	confirmTransactionWithTimeout,
 	getRecentPriorityFee,
 	type PriorityLevel,
 	parseSolanaSendTransactionError,
 	sendAndConfirm,
-	sendTransactionWithRetry,
 	type TransactionExecutionOptions,
 } from "../utils";
 
@@ -54,7 +52,7 @@ export class TransactionPayload {
 			readonly addressLookupTableAccounts?: web3.AddressLookupTableAccount[];
 		},
 		private readonly _signTransaction?: SignTransactionFunction,
-	) {}
+	) { }
 
 	/**
 	 * Simulates the transaction to estimate compute units and detect errors
@@ -124,7 +122,7 @@ export class TransactionPayload {
 				(instruction) =>
 					instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
 					web3.ComputeBudgetInstruction.decodeInstructionType(instruction) ===
-						"SetComputeUnitLimit",
+					"SetComputeUnitLimit",
 			);
 
 		const hasComputeUnitPriceInstruction =
@@ -132,7 +130,7 @@ export class TransactionPayload {
 				(instruction) =>
 					instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
 					web3.ComputeBudgetInstruction.decodeInstructionType(instruction) ===
-						"SetComputeUnitPrice",
+					"SetComputeUnitPrice",
 			);
 
 		const newInstructions: web3.TransactionInstruction[] = [];
@@ -220,10 +218,10 @@ export class TransactionPayload {
 				const simulationResult = await this.simulate(options);
 				const computeUnit = simulationResult.value.unitsConsumed
 					? Math.floor(
-							(simulationResult.value.unitsConsumed +
-								COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT) *
-								2,
-						)
+						(simulationResult.value.unitsConsumed +
+							COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT) *
+						2,
+					)
 					: MAX_COMPUTE_UNIT;
 
 				// Get priority fee instructions but don't modify transactionData
