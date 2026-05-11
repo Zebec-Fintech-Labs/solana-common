@@ -14,6 +14,7 @@ import {
 	getRecentPriorityFee,
 	type PriorityLevel,
 	parseSolanaSendTransactionError,
+	sendAndConfirm,
 	sendTransactionWithRetry,
 	type TransactionExecutionOptions,
 } from "../utils";
@@ -356,37 +357,16 @@ export class MultiTransactionPayload {
 
 		const promises = signedTransactions.map(async (signedTransaction) => {
 			try {
-				// biome-ignore lint/style/noNonNullAssertion: after signing, there should be at least one signature
-				const signatureBuffer = signedTransaction.signatures[0]!;
-				const signature = utils.bytes.bs58.encode(signatureBuffer);
 				const abortController = new AbortController();
+				const signature = sendAndConfirm({
+					blockhash,
+					connection: this._connection,
+					lastValidBlockHeight,
+					signedTransaction,
+					options,
+					abortController,
+				});
 
-				try {
-					await Promise.all([
-						sendTransactionWithRetry(
-							this._connection,
-							signedTransaction,
-							signature,
-							lastValidBlockHeight,
-							abortController.signal,
-							options,
-						),
-						confirmTransactionWithTimeout(
-							this._connection,
-							signature,
-							blockhash,
-							lastValidBlockHeight,
-							abortController,
-							options,
-						).catch((err) => {
-							abortController.abort();
-							throw err;
-						}),
-					]);
-				} catch (err: unknown) {
-					abortController.abort();
-					throw err;
-				}
 				return signature;
 			} catch (err: unknown) {
 				throw parseSolanaSendTransactionError(err, this._errors);

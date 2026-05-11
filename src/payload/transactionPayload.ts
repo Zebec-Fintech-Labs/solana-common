@@ -13,6 +13,7 @@ import {
 	getRecentPriorityFee,
 	type PriorityLevel,
 	parseSolanaSendTransactionError,
+	sendAndConfirm,
 	sendTransactionWithRetry,
 	type TransactionExecutionOptions,
 } from "../utils";
@@ -257,42 +258,20 @@ export class TransactionPayload {
 			}
 
 			const signedTransaction = await this._signTransaction(transaction);
-			// biome-ignore lint/style/noNonNullAssertion: after signing, there should be at least one signature
-			const signatureBuffer = signedTransaction.signatures[0]!;
-			const signature = utils.bytes.bs58.encode(signatureBuffer);
 
 			const abortController = new AbortController();
 
-			try {
-				// Use Promise.all to send and confirm simultaneously
-				await Promise.all([
-					sendTransactionWithRetry(
-						this._connection,
-						signedTransaction,
-						signature,
-						lastValidBlockHeight,
-						abortController.signal,
-						options,
-					),
-					confirmTransactionWithTimeout(
-						this._connection,
-						signature,
-						blockhash,
-						lastValidBlockHeight,
-						abortController,
-						options,
-					).catch((err) => {
-						abortController.abort();
-						throw err;
-					}),
-				]);
-			} catch (err: unknown) {
-				abortController.abort();
-				throw err;
-			}
+			const signature = sendAndConfirm({
+				blockhash,
+				connection: this._connection,
+				lastValidBlockHeight,
+				signedTransaction,
+				options,
+				abortController,
+			});
 
 			return signature;
-		} catch (err: unknown) {
+		} catch (err) {
 			throw parseSolanaSendTransactionError(err, this._errors);
 		}
 	}

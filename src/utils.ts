@@ -4,6 +4,7 @@ import {
 	ProgramError,
 	translateAddress,
 	translateError,
+	utils,
 	web3,
 } from "@coral-xyz/anchor";
 import BigNumber from "bignumber.js";
@@ -477,7 +478,7 @@ export type TransactionExecutionOptions = web3.ConfirmOptions & {
  */
 export async function sendTransactionWithRetry(
 	connection: web3.Connection,
-	signedTransaction: web3.VersionedTransaction,
+	signedTransaction: web3.VersionedTransaction | web3.Transaction,
 	signature: string,
 	lastValidBlockHeight: number,
 	abortSignal: AbortSignal,
@@ -571,4 +572,59 @@ export async function confirmTransactionWithTimeout(
 	console.debug("Confirmed at: %o", new Date(endTime));
 	console.debug("Time elapsed: %d ms", endTime - startTime);
 	abortController.abort();
+}
+
+export async function sendAndConfirm({
+	blockhash,
+	connection,
+	lastValidBlockHeight,
+	signedTransaction,
+	abortController,
+	options,
+}: {
+	connection: web3.Connection;
+	signedTransaction: web3.Transaction | web3.VersionedTransaction;
+	blockhash: string;
+	lastValidBlockHeight: number;
+	options?: TransactionExecutionOptions;
+	abortController?: AbortController;
+}) {
+	const signatureBuffer =
+		signedTransaction instanceof web3.VersionedTransaction
+			? signedTransaction.signatures[0]
+			: signedTransaction.signature;
+	if (!signatureBuffer) {
+		throw new Error("TransactionNotSigned: Signature is empty in transaction");
+	}
+	const signature = utils.bytes.bs58.encode(signatureBuffer);
+
+	abortController = abortController ?? new AbortController();
+
+	try {
+		await Promise.all([
+			sendTransactionWithRetry(
+				connection,
+				signedTransaction,
+				signature,
+				lastValidBlockHeight,
+				abortController.signal,
+				options,
+			),
+			confirmTransactionWithTimeout(
+				connection,
+				signature,
+				blockhash,
+				lastValidBlockHeight,
+				abortController,
+				options,
+			).catch((err) => {
+				abortController.abort();
+				throw err;
+			}),
+		]);
+	} catch (err: unknown) {
+		abortController.abort();
+		throw err;
+	}
+	return signature;
 }
