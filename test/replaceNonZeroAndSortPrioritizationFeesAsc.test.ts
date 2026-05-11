@@ -1,627 +1,170 @@
-import BigNumber from "bignumber.js";
-// import { web3 } from "@coral-xyz/anchor";
-import { assert } from "console";
+import assert from "node:assert";
+import type { web3 } from "@coral-xyz/anchor";
+import { describe, it } from "mocha";
 
 import { replaceNonZeroAndSortPrioritizationFeesAsc } from "../src";
 
-// const connection = new web3.Connection("https://api.mainnet-beta.solana.com");
+type Fee = web3.RecentPrioritizationFees;
+
+function fee(prioritizationFee: number, slot = 0): Fee {
+	return { prioritizationFee, slot };
+}
+
 describe("replaceNonZeroAndSortPrioritizationFeesAsc", () => {
-	it("should sort array in ascending removing NaNs", async () => {
-		const fees = [
-			{
-				prioritizationFee: NaN,
-				slot: 338801267,
-			},
-			{
-				prioritizationFee: 1904,
-				slot: 338801267,
-			},
-			{
-				prioritizationFee: 8514,
-				slot: 338801268,
-			},
-			{
-				prioritizationFee: 976832,
-				slot: 338801269,
-			},
-			{
-				prioritizationFee: 2584,
-				slot: 338801270,
-			},
-			{
-				prioritizationFee: 1769,
-				slot: 338801271,
-			},
-			{
-				prioritizationFee: 4366,
-				slot: 338801272,
-			},
-			{
-				prioritizationFee: 0,
-				slot: 338801273,
-			},
-			{
-				prioritizationFee: 0,
-				slot: 338801274,
-			},
-			{
-				prioritizationFee: 10934,
-				slot: 338801275,
-			},
-			{
-				prioritizationFee: 166667,
-				slot: 338801276,
-			},
-			{
-				prioritizationFee: 1488,
-				slot: 338801277,
-			},
-			{
-				prioritizationFee: 7088,
-				slot: 338801278,
-			},
-			{
-				prioritizationFee: 4367,
-				slot: 338801279,
-			},
-			{
-				prioritizationFee: 1507,
-				slot: 338801280,
-			},
-			{
-				prioritizationFee: 1047,
-				slot: 338801281,
-			},
-			{
-				prioritizationFee: 11890,
-				slot: 338801282,
-			},
-			{
-				prioritizationFee: 1271,
-				slot: 338801283,
-			},
-			{
-				prioritizationFee: 9528,
-				slot: 338801284,
-			},
-			{
-				prioritizationFee: 8315,
-				slot: 338801285,
-			},
-			{
-				prioritizationFee: 6537,
-				slot: 338801286,
-			},
-			{
-				prioritizationFee: 2840,
-				slot: 338801287,
-			},
-			{
-				prioritizationFee: 19243,
-				slot: 338801288,
-			},
-			{
-				prioritizationFee: 108519,
-				slot: 338801289,
-			},
-			{
-				prioritizationFee: 0,
-				slot: 338801290,
-			},
-			{
-				prioritizationFee: 199326,
-				slot: 338801291,
-			},
-			{
-				prioritizationFee: 14857,
-				slot: 338801292,
-			},
-			{
-				prioritizationFee: 9882,
-				slot: 338801293,
-			},
-			{
-				prioritizationFee: 6877,
-				slot: 338801294,
-			},
-			{
-				prioritizationFee: 631944,
-				slot: 338801295,
-			},
-			{
-				prioritizationFee: 3653,
-				slot: 338801296,
-			},
-			{
-				prioritizationFee: 1003,
-				slot: 338801297,
-			},
-			{
-				prioritizationFee: 100000,
-				slot: 338801298,
-			},
-			{
-				prioritizationFee: 1843,
-				slot: 338801299,
-			},
-			{
-				prioritizationFee: 1583908,
-				slot: 338801300,
-			},
-			{
-				prioritizationFee: 19226,
-				slot: 338801301,
-			},
-			{
-				prioritizationFee: 5260,
-				slot: 338801302,
-			},
-			{
-				prioritizationFee: 7101,
-				slot: 338801303,
-			},
-			{
-				prioritizationFee: 6460,
-				slot: 338801304,
-			},
-			{
-				prioritizationFee: 187015,
-				slot: 338801305,
-			},
-			{
-				prioritizationFee: 6153,
-				slot: 338801306,
-			},
-			{
-				prioritizationFee: 4574,
-				slot: 338801307,
-			},
-			{
-				prioritizationFee: 5719,
-				slot: 338801308,
-			},
-			{
-				prioritizationFee: 3575,
-				slot: 338801309,
-			},
-			{
-				prioritizationFee: 2598,
-				slot: 338801310,
-			},
-			{
-				prioritizationFee: 4387,
-				slot: 338801311,
-			},
-			{
-				prioritizationFee: 4366,
-				slot: 338801312,
-			},
-			{
-				prioritizationFee: 0,
-				slot: 338801313,
-			},
-			{
-				prioritizationFee: 165310,
-				slot: 338801314,
-			},
-			{
-				prioritizationFee: 0,
-				slot: 338801315,
-			},
-			{
-				prioritizationFee: 7950,
-				slot: 338801316,
-			},
-			{
-				prioritizationFee: 5637,
-				slot: 338801317,
-			},
-			{
-				prioritizationFee: 5706,
-				slot: 338801318,
-			},
-			{
-				prioritizationFee: 2693,
-				slot: 338801319,
-			},
-			{
-				prioritizationFee: 14998,
-				slot: 338801320,
-			},
-			{
-				prioritizationFee: 6379,
-				slot: 338801321,
-			},
-			{
-				prioritizationFee: 2000000,
-				slot: 338801322,
-			},
-			{
-				prioritizationFee: 2846,
-				slot: 338801323,
-			},
-			{
-				prioritizationFee: 179211,
-				slot: 338801324,
-			},
-			{
-				prioritizationFee: 120232,
-				slot: 338801325,
-			},
-			{
-				prioritizationFee: 23610,
-				slot: 338801326,
-			},
-			{
-				prioritizationFee: 23721,
-				slot: 338801327,
-			},
-			{
-				prioritizationFee: 166667,
-				slot: 338801328,
-			},
-			{
-				prioritizationFee: 10552,
-				slot: 338801329,
-			},
-			{
-				prioritizationFee: 18877,
-				slot: 338801330,
-			},
-			{
-				prioritizationFee: 6710,
-				slot: 338801331,
-			},
-			{
-				prioritizationFee: 3977,
-				slot: 338801332,
-			},
-			{
-				prioritizationFee: 7602,
-				slot: 338801333,
-			},
-			{
-				prioritizationFee: 2013,
-				slot: 338801334,
-			},
-			{
-				prioritizationFee: 3171,
-				slot: 338801335,
-			},
-			{
-				prioritizationFee: 0,
-				slot: 338801336,
-			},
-			{
-				prioritizationFee: 61184,
-				slot: 338801337,
-			},
-			{
-				prioritizationFee: 1200000,
-				slot: 338801338,
-			},
-			{
-				prioritizationFee: 48509,
-				slot: 338801339,
-			},
-			{
-				prioritizationFee: 57463,
-				slot: 338801340,
-			},
-			{
-				prioritizationFee: 18290,
-				slot: 338801341,
-			},
-			{
-				prioritizationFee: 12083,
-				slot: 338801342,
-			},
-			{
-				prioritizationFee: 11846,
-				slot: 338801343,
-			},
-			{
-				prioritizationFee: 4077,
-				slot: 338801344,
-			},
-			{
-				prioritizationFee: 183582,
-				slot: 338801345,
-			},
-			{
-				prioritizationFee: 6599,
-				slot: 338801346,
-			},
-			{
-				prioritizationFee: 2447,
-				slot: 338801347,
-			},
-			{
-				prioritizationFee: 2000000,
-				slot: 338801348,
-			},
-			{
-				prioritizationFee: 5560,
-				slot: 338801349,
-			},
-			{
-				prioritizationFee: 2402,
-				slot: 338801350,
-			},
-			{
-				prioritizationFee: 3212,
-				slot: 338801351,
-			},
-			{
-				prioritizationFee: 1792544,
-				slot: 338801352,
-			},
-			{
-				prioritizationFee: 20539,
-				slot: 338801353,
-			},
-			{
-				prioritizationFee: 18837,
-				slot: 338801354,
-			},
-			{
-				prioritizationFee: 15954,
-				slot: 338801355,
-			},
-			{
-				prioritizationFee: 47161,
-				slot: 338801356,
-			},
-			{
-				prioritizationFee: 26586,
-				slot: 338801357,
-			},
-			{
-				prioritizationFee: 17969,
-				slot: 338801358,
-			},
-			{
-				prioritizationFee: 24722,
-				slot: 338801359,
-			},
-			{
-				prioritizationFee: 2182,
-				slot: 338801360,
-			},
-			{
-				prioritizationFee: 20,
-				slot: 338801361,
-			},
-			{
-				prioritizationFee: 1258,
-				slot: 338801362,
-			},
-			{
-				prioritizationFee: 1356,
-				slot: 338801363,
-			},
-			{
-				prioritizationFee: 26224,
-				slot: 338801364,
-			},
-			{
-				prioritizationFee: 7491,
-				slot: 338801365,
-			},
-			{
-				prioritizationFee: 13929,
-				slot: 338801366,
-			},
-			{
-				prioritizationFee: 3772,
-				slot: 338801367,
-			},
-			{
-				prioritizationFee: 0,
-				slot: 338801368,
-			},
-			{
-				prioritizationFee: 26178,
-				slot: 338801369,
-			},
-			{
-				prioritizationFee: 0,
-				slot: 338801370,
-			},
-			{
-				prioritizationFee: 16435,
-				slot: 338801371,
-			},
-			{
-				prioritizationFee: 186113,
-				slot: 338801372,
-			},
-			{
-				prioritizationFee: 166667,
-				slot: 338801373,
-			},
-			{
-				prioritizationFee: 15277,
-				slot: 338801374,
-			},
-			{
-				prioritizationFee: 11254,
-				slot: 338801375,
-			},
-			{
-				prioritizationFee: 11174,
-				slot: 338801376,
-			},
-			{
-				prioritizationFee: 11986,
-				slot: 338801377,
-			},
-			{
-				prioritizationFee: 8811,
-				slot: 338801378,
-			},
-			{
-				prioritizationFee: 7163,
-				slot: 338801379,
-			},
-			{
-				prioritizationFee: 6563,
-				slot: 338801380,
-			},
-			{
-				prioritizationFee: 742,
-				slot: 338801381,
-			},
-			{
-				prioritizationFee: 1465,
-				slot: 338801382,
-			},
-			{
-				prioritizationFee: 1861,
-				slot: 338801383,
-			},
-			{
-				prioritizationFee: 10000000,
-				slot: 338801384,
-			},
-			{
-				prioritizationFee: 0,
-				slot: 338801385,
-			},
-			{
-				prioritizationFee: 10000000,
-				slot: 338801386,
-			},
-			{
-				prioritizationFee: 137134,
-				slot: 338801387,
-			},
-			{
-				prioritizationFee: 10000000,
-				slot: 338801388,
-			},
-			{
-				prioritizationFee: 6112,
-				slot: 338801389,
-			},
-			{
-				prioritizationFee: 1374,
-				slot: 338801390,
-			},
-			{
-				prioritizationFee: 4628,
-				slot: 338801391,
-			},
-			{
-				prioritizationFee: 103086,
-				slot: 338801392,
-			},
-			{
-				prioritizationFee: 15236,
-				slot: 338801393,
-			},
-			{
-				prioritizationFee: 10827,
-				slot: 338801394,
-			},
-			{
-				prioritizationFee: 166667,
-				slot: 338801395,
-			},
-			{
-				prioritizationFee: 16245,
-				slot: 338801396,
-			},
-			{
-				prioritizationFee: 166667,
-				slot: 338801397,
-			},
-			{
-				prioritizationFee: 14219,
-				slot: 338801398,
-			},
-			{
-				prioritizationFee: 7680,
-				slot: 338801399,
-			},
-			{
-				prioritizationFee: 2465,
-				slot: 338801400,
-			},
-			{
-				prioritizationFee: 3031,
-				slot: 338801401,
-			},
-			{
-				prioritizationFee: 6579,
-				slot: 338801402,
-			},
-			{
-				prioritizationFee: 5071,
-				slot: 338801403,
-			},
-			{
-				prioritizationFee: 31046,
-				slot: 338801404,
-			},
-			{
-				prioritizationFee: 0,
-				slot: 338801405,
-			},
-			{
-				prioritizationFee: 83143,
-				slot: 338801406,
-			},
-			{
-				prioritizationFee: 27147,
-				slot: 338801407,
-			},
-			{
-				prioritizationFee: 3515,
-				slot: 338801408,
-			},
-			{
-				prioritizationFee: 2428,
-				slot: 338801409,
-			},
-			{
-				prioritizationFee: 1190,
-				slot: 338801410,
-			},
-			{
-				prioritizationFee: 3498,
-				slot: 338801411,
-			},
-			{
-				prioritizationFee: 19201,
-				slot: 338801412,
-			},
-			{
-				prioritizationFee: 27711,
-				slot: 338801413,
-			},
-			{
-				prioritizationFee: 23024,
-				slot: 338801414,
-			},
-			{
-				prioritizationFee: 18095,
-				slot: 338801415,
-			},
-			{
-				prioritizationFee: 14055,
-				slot: 338801416,
-			},
+	it("should return an empty array for empty input", () => {
+		assert.deepStrictEqual(replaceNonZeroAndSortPrioritizationFeesAsc([]), []);
+	});
+
+	it("should filter out entries with prioritizationFee = 0", () => {
+		const input = [fee(0, 1), fee(100, 2), fee(0, 3), fee(50, 4)];
+		const out = replaceNonZeroAndSortPrioritizationFeesAsc(input);
+		assert.strictEqual(out.length, 2);
+		assert.ok(out.every((f) => f.prioritizationFee > 0));
+	});
+
+	it("should filter out entries with NaN prioritizationFee", () => {
+		const input = [fee(NaN, 1), fee(123, 2), fee(NaN, 3)];
+		const out = replaceNonZeroAndSortPrioritizationFeesAsc(input);
+		assert.strictEqual(out.length, 1);
+		assert.strictEqual(out[0]?.prioritizationFee, 123);
+	});
+
+	it("should filter out negative entries (predicate is > 0)", () => {
+		const input = [fee(-10, 1), fee(0, 2), fee(5, 3), fee(-1, 4)];
+		const out = replaceNonZeroAndSortPrioritizationFeesAsc(input);
+		assert.strictEqual(out.length, 1);
+		assert.strictEqual(out[0]?.prioritizationFee, 5);
+	});
+
+	it("should sort surviving entries in strictly ascending order", () => {
+		const input = [fee(50_000), fee(10), fee(123), fee(7_500_000), fee(1)];
+		const out = replaceNonZeroAndSortPrioritizationFeesAsc(input);
+
+		assert.deepStrictEqual(
+			out.map((f) => f.prioritizationFee),
+			[1, 10, 123, 50_000, 7_500_000],
+		);
+
+		// Every adjacent pair must be non-decreasing.
+		for (let i = 1; i < out.length; i++) {
+			const prev = out[i - 1];
+			const curr = out[i];
+			assert.ok(prev && curr);
+			assert.ok(
+				prev.prioritizationFee <= curr.prioritizationFee,
+				`pair (${prev.prioritizationFee}, ${curr.prioritizationFee}) is not ascending`,
+			);
+		}
+	});
+
+	it("should preserve the slot field for each surviving entry", () => {
+		const input = [fee(30, 1001), fee(0, 1002), fee(20, 1003), fee(10, 1004)];
+		const out = replaceNonZeroAndSortPrioritizationFeesAsc(input);
+
+		assert.deepStrictEqual(out, [
+			{ prioritizationFee: 10, slot: 1004 },
+			{ prioritizationFee: 20, slot: 1003 },
+			{ prioritizationFee: 30, slot: 1001 },
+		]);
+	});
+
+	it("should not mutate the input array", () => {
+		const input = [fee(3, 1), fee(NaN, 2), fee(0, 3), fee(1, 4)];
+		const snapshot = input.map((f) => ({ ...f }));
+
+		replaceNonZeroAndSortPrioritizationFeesAsc(input);
+
+		assert.strictEqual(input.length, snapshot.length);
+		input.forEach((f, i) => {
+			const original = snapshot[i];
+			assert.ok(original);
+			if (Number.isNaN(original.prioritizationFee)) {
+				assert.ok(Number.isNaN(f.prioritizationFee));
+			} else {
+				assert.strictEqual(f.prioritizationFee, original.prioritizationFee);
+			}
+			assert.strictEqual(f.slot, original.slot);
+		});
+	});
+
+	it("should return an empty array when every entry is zero or NaN", () => {
+		const input = [fee(0, 1), fee(NaN, 2), fee(0, 3), fee(NaN, 4)];
+		assert.deepStrictEqual(
+			replaceNonZeroAndSortPrioritizationFeesAsc(input),
+			[],
+		);
+	});
+
+	it("should keep duplicate fees and order them stably enough to be ascending", () => {
+		const input = [fee(100, 10), fee(50, 20), fee(100, 30), fee(50, 40)];
+		const out = replaceNonZeroAndSortPrioritizationFeesAsc(input);
+		assert.deepStrictEqual(
+			out.map((f) => f.prioritizationFee),
+			[50, 50, 100, 100],
+		);
+	});
+
+	it("should handle a single positive entry unchanged", () => {
+		const input = [fee(42, 99)];
+		assert.deepStrictEqual(replaceNonZeroAndSortPrioritizationFeesAsc(input), [
+			{ prioritizationFee: 42, slot: 99 },
+		]);
+	});
+
+	it("should produce a fully ascending result on a large realistic dataset", () => {
+		// Sampled from a real `getRecentPrioritizationFees` response containing
+		// NaNs, zeros, and a wide value range. The result must be entirely
+		// non-NaN, strictly positive, and ascending.
+		const fees: Fee[] = [
+			fee(NaN, 338801267),
+			fee(1904, 338801268),
+			fee(8514, 338801269),
+			fee(976832, 338801270),
+			fee(0, 338801271),
+			fee(2584, 338801272),
+			fee(1769, 338801273),
+			fee(4366, 338801274),
+			fee(0, 338801275),
+			fee(10934, 338801276),
+			fee(166667, 338801277),
+			fee(1488, 338801278),
+			fee(0, 338801279),
+			fee(7088, 338801280),
+			fee(4367, 338801281),
+			fee(1507, 338801282),
+			fee(NaN, 338801283),
+			fee(1047, 338801284),
+			fee(11890, 338801285),
+			fee(2000000, 338801286),
+			fee(10000000, 338801287),
+			fee(20, 338801288),
 		];
 
 		const sorted = replaceNonZeroAndSortPrioritizationFeesAsc(fees);
 
-		assert(
-			BigNumber(sorted[0].prioritizationFee).comparedTo(
-				sorted[1].prioritizationFee,
-			) === -1,
-			"Array is not sorted in ascending",
+		// No NaNs, no zeros.
+		assert.ok(
+			sorted.every(
+				(f) => !Number.isNaN(f.prioritizationFee) && f.prioritizationFee > 0,
+			),
+			"result still contains NaN or zero entries",
 		);
-		assert(sorted.some((item) => !Number.isNaN(item.prioritizationFee)));
+
+		// Strictly non-decreasing.
+		for (let i = 1; i < sorted.length; i++) {
+			const prev = sorted[i - 1];
+			const curr = sorted[i];
+			assert.ok(prev && curr);
+			assert.ok(
+				prev.prioritizationFee <= curr.prioritizationFee,
+				`out of order at index ${i}: ${prev.prioritizationFee} > ${curr.prioritizationFee}`,
+			);
+		}
+
+		// Survivor count = inputs with positive, finite fee.
+		const expectedSurvivors = fees.filter(
+			(f) => !Number.isNaN(f.prioritizationFee) && f.prioritizationFee > 0,
+		).length;
+		assert.strictEqual(sorted.length, expectedSurvivors);
 	});
 });
