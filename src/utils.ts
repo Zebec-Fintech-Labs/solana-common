@@ -509,23 +509,24 @@ export async function sendTransactionWithRetry(
 			retry++;
 			await sleep(sendTransactionInterval);
 			blockHeight = await connection.getBlockHeight(options);
-			// biome-ignore lint/suspicious/noExplicitAny: error can be of any type and needs to be handled gracefully
-		} catch (err: any) {
-			if (
-				err.message?.includes("This transaction has already been processed")
-			) {
-				console.debug(
-					"Transaction already processed. Exiting send retry loop.",
-				);
-				return;
-			}
+		} catch (err) {
+			if (err instanceof Error) {
+				if (
+					err.message?.includes("This transaction has already been processed")
+				) {
+					console.debug(
+						"Transaction already processed. Exiting send retry loop.",
+					);
+					return;
+				}
 
-			if (err.message?.includes("Blockhash not found")) {
-				console.debug("Expected error (will retry):", err.message);
-				retry++;
-				await sleep(sendTransactionInterval);
-				blockHeight = await connection.getBlockHeight(options);
-				continue;
+				if (err.message?.includes("Blockhash not found")) {
+					console.debug("Expected error (will retry):", err.message);
+					retry++;
+					await sleep(sendTransactionInterval);
+					blockHeight = await connection.getBlockHeight(options);
+					continue;
+				}
 			}
 
 			throw err;
@@ -622,7 +623,7 @@ export async function sendAndConfirm({
 				throw err;
 			}),
 		]);
-	} catch (err: unknown) {
+	} catch (err) {
 		abortController.abort();
 		throw err;
 	}
