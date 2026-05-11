@@ -146,7 +146,11 @@ export function formatSol(amount: BigNumber.Value): string {
  * @returns
  */
 export function parseToken(amount: BigNumber.Value, decimals: number): bigint {
-	return BigInt(BigNumber(amount).times(TEN_BIGNUM.pow(decimals)).toFixed(0));
+	return BigInt(
+		BigNumber(amount)
+			.times(TEN_BIGNUM.pow(decimals))
+			.toFixed(0, BigNumber.ROUND_FLOOR),
+	);
 }
 
 /**
