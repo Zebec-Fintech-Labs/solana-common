@@ -2,12 +2,25 @@ import { utils, web3 } from "@coral-xyz/anchor";
 import BigNumber from "bignumber.js";
 
 // Transaction timing constants (in milliseconds)
+/**
+ * Default delay between consecutive `sendRawTransaction` retries inside
+ * {@link sendTransactionWithRetry}. 1s balances responsiveness against RPC
+ * load — most clusters can absorb a 1Hz rebroadcast comfortably.
+ */
 export const DEFAULT_SEND_TRANSACTION_INTERVAL = 1000;
 
 // Compute budget constants
+/** Hard ceiling on compute units per transaction (Solana runtime limit). */
 export const MAX_COMPUTE_UNIT = 1_400_000;
+/** Per-signature base fee paid in lamports, independent of priority fee. */
 export const BASE_FEE_LAMPORTS = 5000;
+/** Conversion factor: 1 lamport = 1_000_000 micro-lamports. */
 export const LAMPORTS_PER_MICRO_LAMPORT = 0.000001;
+/**
+ * Safety cap (SOL) on the total priority fee any single transaction is
+ * allowed to budget when the caller doesn't specify `maxPriorityFeeSol`.
+ * Prevents bursty network conditions from draining wallets.
+ */
 export const DEFAULT_MAX_PRIORITY_FEE = 0.001;
 
 /** USDC Decimals = 6 */
@@ -42,5 +55,10 @@ export const MEMO_PROGRAM_ID = new web3.PublicKey(
 	"MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
 );
 
-/** Compute units for the Compute Budget Program */
+/**
+ * Approximate CU overhead the ComputeBudget program itself charges per
+ * transaction. Added on top of the simulated `unitsConsumed` when sizing
+ * the CU limit so the transaction doesn't run out of budget executing the
+ * budget instructions.
+ */
 export const COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT = 400;

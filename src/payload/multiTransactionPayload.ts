@@ -18,7 +18,12 @@ import {
 } from "../utils";
 
 /**
- * Transaction signing function type
+ * Async callback that receives the full batch of built transactions, signs
+ * them all (typically via a single wallet prompt), and returns the signed
+ * batch in the same order.
+ *
+ * Returning the array in the original order is required — downstream code
+ * pairs the result with `transactionsData[i]` by index.
  */
 export type SignAllTransactionsFunction = <
 	T extends web3.Transaction | web3.VersionedTransaction,
@@ -27,9 +32,16 @@ export type SignAllTransactionsFunction = <
 ) => Promise<T[]>;
 
 /**
- * Enhanced transaction payload class with improved error handling and retry logic
+ * Return shape of {@link MultiTransactionPayload.execute}.
+ *
+ * One entry per input transaction, preserving order, combining:
+ *   - the standard `PromiseSettledResult<string>` (signature on success,
+ *     reason on failure — failures do **not** abort siblings),
+ *   - `transactionData`: a reference back to the input that produced this
+ *     result, useful for retrying just the failures,
+ *   - `transaction`: the built+signed `VersionedTransaction`, in case the
+ *     caller wants to re-broadcast it or inspect the wire payload.
  */
-
 export type MultiTransactionPayloadExecuteReturn =
 	(PromiseSettledResult<string> & {
 		transactionData: {
@@ -41,6 +53,12 @@ export type MultiTransactionPayloadExecuteReturn =
 		transaction: web3.VersionedTransaction;
 	})[];
 
+/**
+ * Builder for sending a batch of independent Solana transactions in one
+ * call. Unlike {@link TransactionPayload}, failures are surfaced
+ * per-transaction via `Promise.allSettled` semantics — one bad transaction
+ * doesn't block the others from being sent or confirmed.
+ */
 export class MultiTransactionPayload {
 	private static readonly ERROR_MESSAGES = {
 		SIGN_FUNCTION_REQUIRED:
@@ -50,11 +68,19 @@ export class MultiTransactionPayload {
 	} as const;
 
 	/**
-	 *
-	 * @param _connection Solana rpc connection
-	 * @param _errors Program errors map for error translation
-	 * @param transactionsData Array of transaction data objects
-	 * @param _signAllTransactions Function that signs and returns signed transactions
+	 * @param _connection           Solana RPC connection shared across all
+	 *                              transactions in the batch.
+	 * @param _errors               Program error code → message map from the
+	 *                              IDL (forwarded to error translation).
+	 * @param transactionsData      Ordered batch of transaction descriptors.
+	 *                              At least one is required; each entry must
+	 *                              have non-empty `instructions` and a
+	 *                              `feePayer`. Validated eagerly in the
+	 *                              constructor — see
+	 *                              {@link validateTransactionData}.
+	 * @param _signAllTransactions  Bulk-signing callback. Required by
+	 *                              {@link execute}; for `simulate` it's only
+	 *                              required when `sigVerify: true`.
 	 */
 	constructor(
 		private readonly _connection: web3.Connection,
@@ -70,6 +96,11 @@ export class MultiTransactionPayload {
 		this.validateTransactionData();
 	}
 
+	/**
+	 * Convenience factory — same as calling `new MultiTransactionPayload(...)`.
+	 * Exists so callers can use a single named entry point and skip the `new`
+	 * keyword, which reads better in builder-style chains.
+	 */
 	static create(
 		connection: web3.Connection,
 		errors: Map<number, string>,
@@ -90,7 +121,13 @@ export class MultiTransactionPayload {
 	}
 
 	/**
-	 * Validates transaction data integrity
+	 * Validates the input batch up front so callers get a synchronous error
+	 * for malformed input instead of a confusing failure deep in `execute`.
+	 *
+	 * Invariants enforced:
+	 *   - at least one transaction,
+	 *   - every transaction has at least one instruction,
+	 *   - every transaction has a fee payer.
 	 */
 	private validateTransactionData(): void {
 		if (!this.transactionsData.length) {
@@ -108,7 +145,20 @@ export class MultiTransactionPayload {
 	}
 
 	/**
-	 * Simulates the transactions to estimate compute units and detect errors
+	 * Simulates every transaction in the batch in parallel and returns a
+	 * `Map` keyed by the original input index.
+	 *
+	 * All transactions share the same freshly fetched blockhash so the
+	 * simulation snapshot is internally consistent. With `sigVerify: true`,
+	 * the bulk-sign callback runs once for the whole batch (matching the
+	 * UX of a single wallet prompt).
+	 *
+	 * If any individual `simulateTransaction` call **throws**
+	 * (e.g. RPC-level error, sigVerify failure), this method rejects with a
+	 * {@link MultiTransactionSimulationError} carrying per-index details for
+	 * every failure. Simulations that resolve with `value.err !== null` are
+	 * *not* treated as errors here — they're returned in the map for the
+	 * caller to inspect.
 	 */
 	async simulate(
 		options?: web3.SimulateTransactionConfig,
@@ -198,6 +248,12 @@ export class MultiTransactionPayload {
 		}
 	}
 
+	/**
+	 * Builds (but does not send) one `VersionedTransaction` per
+	 * `transactionsData` entry, sharing the supplied `blockhash`. Any
+	 * per-transaction `signers` are applied here so the returned transactions
+	 * already have their non-fee-payer signatures populated.
+	 */
 	async buildVersionTransactions(
 		blockhash: string,
 	): Promise<web3.VersionedTransaction[]> {
@@ -220,7 +276,14 @@ export class MultiTransactionPayload {
 		);
 	}
 	/**
-	 * Adds priority fee instructions if they don't already exist
+	 * Prepends compute-budget instructions to a single transaction's
+	 * instruction list (in-place via `unshift`). Each kind
+	 * (`SetComputeUnitLimit` / `SetComputeUnitPrice`) is only added when the
+	 * caller hasn't already supplied one, so user-provided budget settings
+	 * always win.
+	 *
+	 * `unshift` is used because the Solana runtime only honors compute-budget
+	 * instructions that appear at the start of the instruction array.
 	 */
 	private async addPriorityFeeInstructions(
 		instructions: web3.TransactionInstruction[],
@@ -265,7 +328,15 @@ export class MultiTransactionPayload {
 	}
 
 	/**
-	 * Calculates priority fee in micro-lamports
+	 * Returns the per-CU priority fee in micro-lamports for a single
+	 * transaction in the batch.
+	 *
+	 *   - If `exactPriorityFeeSol` is set: budget exactly that SOL amount as
+	 *     priority fee, distributed across `computeUnit`. Caller takes
+	 *     responsibility for the spend.
+	 *   - Otherwise: sample recent network activity via
+	 *     {@link getRecentPriorityFee} and cap by `maxPriorityFeeSol` so
+	 *     bursty congestion can't drain wallets.
 	 */
 	private async calculatePriorityFee(
 		instructions: web3.TransactionInstruction[],
@@ -308,7 +379,19 @@ export class MultiTransactionPayload {
 	}
 
 	/**
-	 * Signs, sends, and confirms transaction with enhanced error handling
+	 * End-to-end batch send: (optionally) simulate → attach priority fees →
+	 * build → bulk-sign → send & confirm each transaction in parallel.
+	 *
+	 * Failure semantics: each transaction is wrapped in its own try/catch
+	 * and surfaced as a `PromiseSettledResult`, so one bad transaction
+	 * doesn't cancel its siblings. Use the returned `transactionData` /
+	 * `transaction` fields to retry just the failures.
+	 *
+	 * @returns One result per input transaction, in the original order.
+	 * @throws  Only for pre-flight failures that affect the whole batch
+	 *          (missing sign function, batch-level simulation throw,
+	 *          blockhash fetch failure). Individual transaction failures
+	 *          surface as `status: "rejected"` entries.
 	 */
 	async execute(
 		options?: TransactionExecutionOptions,
@@ -322,6 +405,9 @@ export class MultiTransactionPayload {
 		const enablePriorityFee = options?.enablePriorityFee ?? true;
 
 		if (enablePriorityFee) {
+			// Simulation runs with `sigVerify: true` so the cluster rejects
+			// the batch early if any signature is bad — cheaper than learning
+			// that at send time.
 			const simulationResults = await this.simulate({
 				...options,
 				sigVerify: true,
@@ -329,6 +415,8 @@ export class MultiTransactionPayload {
 			await Promise.all(
 				this.transactionsData.map(async (data, i) => {
 					const simulationResult = simulationResults.get(i);
+					// CU sizing: simulated spend + ComputeBudget overhead, x2
+					// safety margin. Under-provisioning kills the whole tx.
 					const computeUnit = simulationResult?.value.unitsConsumed
 						? Math.floor(
 								(simulationResult.value.unitsConsumed +
@@ -353,6 +441,10 @@ export class MultiTransactionPayload {
 
 		const signedTransactions = await this._signAllTransactions(transactions);
 
+		// Each transaction gets its own AbortController so one failing
+		// confirmation can stop its own send loop without affecting the rest
+		// of the batch. The outer `Promise.allSettled` keeps siblings running
+		// to completion even if some reject.
 		const promises = signedTransactions.map(async (signedTransaction) => {
 			try {
 				const abortController = new AbortController();

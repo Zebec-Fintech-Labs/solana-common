@@ -17,7 +17,13 @@ import {
 } from "../utils";
 
 /**
- * Transaction signing function type
+ * Async callback that accepts a built transaction, signs it with the
+ * caller's wallet (in-place is fine), and returns the same transaction.
+ *
+ * Generic over both legacy and versioned transactions so the same function
+ * signature can be used regardless of which {@link TransactionPayload}
+ * produces internally. Callers typically branch on `instanceof web3.Transaction`
+ * vs `instanceof web3.VersionedTransaction` to pick the right signing API.
  */
 export type SignTransactionFunction = <
 	T extends web3.Transaction | web3.VersionedTransaction,
@@ -26,7 +32,16 @@ export type SignTransactionFunction = <
 ) => Promise<T>;
 
 /**
- * Enhanced transaction payload class with improved error handling and retry logic
+ * High-level builder for a single Solana transaction.
+ *
+ * Wraps the standard "build → (optionally simulate for priority fee) →
+ * sign → send → confirm" pipeline with:
+ *   - automatic compute-budget / priority-fee instruction injection,
+ *   - retry on transient send errors,
+ *   - error translation via {@link parseSolanaSendTransactionError}.
+ *
+ * For sending multiple independent transactions in one call, see
+ * `MultiTransactionPayload`.
  */
 export class TransactionPayload {
 	private static readonly ERROR_MESSAGES = {
@@ -36,11 +51,18 @@ export class TransactionPayload {
 	} as const;
 
 	/**
-	 *
-	 * @param _connection Solana rpc connection
-	 * @param _errors
-	 * @param transactionData
-	 * @param _signTransaction
+	 * @param _connection      Solana RPC connection used for blockhash fetch,
+	 *                         simulation, send, and confirm.
+	 * @param _errors          Map of program error codes → messages from the
+	 *                         program's IDL. Forwarded to
+	 *                         {@link parseSolanaSendTransactionError}.
+	 * @param transactionData  Instructions + fee payer + (optional) signers
+	 *                         and address-lookup tables that make up the
+	 *                         single transaction.
+	 * @param _signTransaction Wallet-supplied signing callback. Required by
+	 *                         {@link execute}; optional only when the caller
+	 *                         is going to use {@link buildVersionTransaction}
+	 *                         or {@link simulate} without `sigVerify`.
 	 */
 	constructor(
 		private readonly _connection: web3.Connection,
@@ -55,7 +77,20 @@ export class TransactionPayload {
 	) {}
 
 	/**
-	 * Simulates the transaction to estimate compute units and detect errors
+	 * Simulates the transaction against the cluster.
+	 *
+	 * Used in two modes:
+	 *   - `sigVerify: false` (default) — cheap dry-run that returns
+	 *     `unitsConsumed` and any execution `err`, used by {@link execute}
+	 *     to size the compute-unit limit before sending.
+	 *   - `sigVerify: true` — performs full signature verification; requires
+	 *     a `_signTransaction` callback because the transaction needs real
+	 *     signatures for the RPC to accept it.
+	 *
+	 * Note: this resolves successfully with `result.value.err !== null` when
+	 * the transaction would fail at runtime (e.g. insufficient funds). It
+	 * only throws on RPC-level errors (bad blockhash, sigVerify mismatch),
+	 * which are then routed through Anchor's `translateError`.
 	 */
 	async simulate(
 		options?: web3.SimulateTransactionConfig,
@@ -95,6 +130,15 @@ export class TransactionPayload {
 		}
 	}
 
+	/**
+	 * Builds — but does **not** broadcast — a `VersionedTransaction` from the
+	 * configured `transactionData`. Useful when the caller wants full control
+	 * over signing or wants to inspect the compiled message before sending.
+	 *
+	 * If `transactionData.signers` is non-empty, they are applied here so the
+	 * returned transaction has its non-fee-payer signatures already populated.
+	 * The fee-payer signature still has to be supplied externally.
+	 */
 	buildVersionTransaction(blockhash: string): web3.VersionedTransaction {
 		const message = new web3.TransactionMessage({
 			instructions: this.transactionData.instructions,
@@ -111,7 +155,11 @@ export class TransactionPayload {
 		return transaction;
 	}
 	/**
-	 * Adds priority fee instructions if they don't already exist
+	 * Returns the compute-budget instructions that need to be prepended to the
+	 * transaction. Skips either instruction kind (`SetComputeUnitLimit` /
+	 * `SetComputeUnitPrice`) when the caller already supplied one in
+	 * `transactionData.instructions`, so user-provided budget settings always
+	 * win.
 	 */
 	private async getPriorityFeeInstructions(
 		computeUnit: number,
@@ -158,7 +206,14 @@ export class TransactionPayload {
 	}
 
 	/**
-	 * Calculates priority fee in micro-lamports
+	 * Resolves the per-CU priority fee to attach.
+	 *
+	 *   - If `exactPriorityFeeSol` is set: pay exactly that much (in SOL)
+	 *     above the base fee, distributed across the compute budget. Useful
+	 *     when the caller wants deterministic spend.
+	 *   - Otherwise: derive a fee from recent cluster activity via
+	 *     `getRecentPriorityFee`, capped by `maxPriorityFeeSol` so a bursty
+	 *     network can't accidentally drain wallets.
 	 */
 	private async calculatePriorityFee(
 		computeUnit: number,
@@ -200,7 +255,17 @@ export class TransactionPayload {
 	}
 
 	/**
-	 * Signs, sends, and confirms transaction with enhanced error handling
+	 * End-to-end happy path: simulate (for compute units) → attach priority
+	 * fee → fetch blockhash → build VersionedTransaction → sign → send +
+	 * confirm.
+	 *
+	 * Any error from any step is funneled through
+	 * {@link parseSolanaSendTransactionError} so callers always see a
+	 * normalized `Error` (Anchor error / insufficient-funds / etc).
+	 *
+	 * @param options Standard `ConfirmOptions` plus retry / priority-fee
+	 *                tuning. `enablePriorityFee` defaults to `true`.
+	 * @returns bs58-encoded transaction signature.
 	 */
 	async execute(
 		options?: TransactionExecutionOptions,
@@ -214,8 +279,16 @@ export class TransactionPayload {
 			let priorityFeeInstructions: web3.TransactionInstruction[] = [];
 
 			if (enablePriorityFee) {
-				// Simulate WITHOUT priority fee instructions first
+				// Simulate before injecting compute-budget instructions so the
+				// reported `unitsConsumed` reflects the caller's real workload.
 				const simulationResult = await this.simulate(options);
+				// Sizing rationale: take the simulated CU spend, add the
+				// constant overhead the ComputeBudget program itself charges,
+				// then double it as a safety margin — under-provisioning the
+				// limit causes the whole transaction to fail at runtime, which
+				// is far worse than slightly over-paying. Fall back to
+				// `MAX_COMPUTE_UNIT` if the simulator didn't report a number
+				// (e.g. simulation errored out).
 				const computeUnit = simulationResult.value.unitsConsumed
 					? Math.floor(
 							(simulationResult.value.unitsConsumed +
@@ -238,7 +311,9 @@ export class TransactionPayload {
 			// 	JSON.stringify(priorityFeeInstructions),
 			// );
 
-			// Build transaction with priority fee instructions prepended
+			// Priority-fee instructions must come first; the runtime ignores
+			// `SetComputeUnitLimit` / `SetComputeUnitPrice` instructions that
+			// appear after the first non-budget instruction.
 			const allInstructions = [
 				...priorityFeeInstructions,
 				...this.transactionData.instructions,

@@ -15,13 +15,21 @@ import {
 	TOKEN_PROGRAM_ID,
 } from "./constants";
 
+// Process-wide cache so repeated balance / amount lookups for the same mint
+// don't issue a fresh `getTokenSupply` RPC every call. Mint decimals are
+// immutable for SPL Token mints, so caching is safe for the lifetime of the
+// process.
 const mintToDecimalsMap = new Map<string, number>();
 
 /**
- * Gets decimals for given mint
- * @param connection
- * @param mint
- * @returns
+ * Fetches the decimal precision for an SPL token mint.
+ *
+ * Results are memoized in `mintToDecimalsMap` — the first call hits the RPC,
+ * subsequent calls for the same mint are O(1).
+ *
+ * @param connection Solana RPC connection used on cache miss.
+ * @param mint       Token mint to look up.
+ * @returns Decimal precision (e.g. 6 for USDC, 9 for SOL/WSOL).
  */
 export async function getMintDecimals(
 	connection: web3.Connection,
@@ -154,6 +162,13 @@ export function formatToken(amount: BigNumber.Value, decimals: number): string {
 export type FormattedBalance = string;
 export type PublicKeyString = string;
 
+/**
+ *
+ * @param connection Solana Connection
+ * @param address Wallet address
+ * @param commitmentOrConfig Solana Commitment or GetBalanceConfig
+ * @returns SOL Balance in ui amount
+ */
 export async function getSolBalance(
 	connection: web3.Connection,
 	address: Address,
@@ -167,6 +182,15 @@ export async function getSolBalance(
 	return formatSol(balance);
 }
 
+/**
+ *
+ * @param connection Solana connection
+ * @param address Wallet address
+ * @param tokenMints Array of token mints
+ * @param allowOwnerOffCurve boolean value whether to allow off curve wallet address
+ * @param config Solana GetBalanceConfig
+ * @returns Records of token mint key and ui token amount value
+ */
 export async function getTokenBalances(
 	connection: web3.Connection,
 	address: Address,
@@ -210,6 +234,28 @@ export async function getTokenBalances(
 	return balances;
 }
 
+/**
+ * Normalizes any error thrown while sending or confirming a Solana transaction
+ * into a single `Error` with a human-readable message.
+ *
+ * Resolution order (first match wins):
+ *   1. Known Jupiter aggregator program errors → friendly message.
+ *   2. Insufficient-SOL detection → friendly message.
+ *   3. Anchor `AnchorError` → formatted program + error-code + origin.
+ *   4. Anchor `ProgramError`  → formatted program + code + msg.
+ *   5. Fallback: the `transactionMessage` field if present, else the
+ *      translated error as-is.
+ *
+ * The earlier checks are intentionally before Anchor's class-based ones
+ * because Jupiter / insufficient-funds errors arrive as plain `Error`s with
+ * meaningful substrings, and surfacing those is more actionable than the raw
+ * "custom program error: 0x…" string.
+ *
+ * @param error     Raw error from `sendRawTransaction` / `confirmTransaction`.
+ * @param idlErrors Map of program error codes → messages from a program's
+ *                  IDL, forwarded to Anchor's `translateError`.
+ * @returns A single `Error` ready to be thrown to callers.
+ */
 export function parseSolanaSendTransactionError(
 	error: unknown,
 	idlErrors: Map<number, string>,
@@ -236,6 +282,8 @@ export function parseSolanaSendTransactionError(
 	} else if (translatedError instanceof ProgramError) {
 		return parseProgramError(translatedError);
 	} else {
+		// `SendTransactionError` carries a richer `transactionMessage` than its
+		// default `.message`; prefer it when available.
 		return "transactionMessage" in translatedError
 			? new Error(translatedError.transactionMessage)
 			: translatedError;
@@ -258,6 +306,16 @@ function parseAnchorError(translatedError: AnchorError) {
 	);
 }
 
+/**
+ * Recognises common error codes thrown by Jupiter's aggregator program
+ * (`JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4`) and rewrites them into a
+ * descriptive `Error`. Returns `null` when the error doesn't match a known
+ * Jupiter failure mode, letting the caller fall through to other parsers.
+ *
+ * Codes recognised: 0x1771 (slippage), 0x1778 (not enough account keys),
+ * 0x1781 (exact-out mismatch), 0x1788 (insufficient funds for swap/fees/rent),
+ * 0x1789 (invalid / uninitialized token account).
+ */
 function parseJupErrors(translatedError: unknown) {
 	if (
 		!translatedError ||
@@ -322,6 +380,18 @@ function parseJupErrors(translatedError: unknown) {
 	return null;
 }
 
+/**
+ * Detects the multiple wire-level shapes Solana can use to report an
+ * insufficient-balance failure and collapses them into a single friendly
+ * error. The detection looks for any of:
+ *   - "Attempt to debit an account but found no record of a prior credit."
+ *     (preflight before the account has ever received SOL)
+ *   - "custom program error: 0x1" (System Program's NotEnoughAccountKeys /
+ *     ResultWithNegativeLamports)
+ *   - "insufficient funds" (RPC-level free-form message)
+ *
+ * @returns A normalized `Error` on match, `null` otherwise.
+ */
 function parseInsufficientFundsErrorMessage(
 	translatedError: unknown,
 ): Error | null {
@@ -474,7 +544,33 @@ export type TransactionExecutionOptions = web3.ConfirmOptions & {
 };
 
 /**
- * Handles transaction sending with retry logic
+ * Repeatedly broadcasts a signed transaction to the cluster until any of:
+ *   - the cluster's current block height passes `lastValidBlockHeight`
+ *     (blockhash has expired — caller must rebuild & resign),
+ *   - `maxSendTransactionRetries` is reached,
+ *   - the shared `abortSignal` fires (typically because confirmation
+ *     succeeded or failed),
+ *   - the RPC reports the transaction has already been processed
+ *     (treated as success — confirmation will pick it up).
+ *
+ * "Blockhash not found" errors are treated as transient and retried, since
+ * leaders sometimes lag behind the blockhash that was just fetched.
+ *
+ * This is the "send" half of {@link sendAndConfirm}; pair it with
+ * {@link confirmTransactionWithTimeout} via a shared `AbortController` so
+ * either side can stop the other once a terminal state is reached.
+ *
+ * @param connection           Solana RPC connection.
+ * @param signedTransaction    Fully signed legacy or versioned transaction.
+ * @param signature            bs58-encoded signature, used only for logging.
+ * @param lastValidBlockHeight Upper-bound block height the signed blockhash
+ *                             is valid for. Past this, the transaction is
+ *                             guaranteed to be dropped.
+ * @param abortSignal          Cooperative cancellation signal from the
+ *                             confirmation half.
+ * @param options              Retry tuning + standard `ConfirmOptions`.
+ * @throws `Error("Block height exceeded before confirmation")` when the
+ *         loop terminates because the blockhash expired.
  */
 export async function sendTransactionWithRetry(
 	connection: web3.Connection,
@@ -539,7 +635,24 @@ export async function sendTransactionWithRetry(
 }
 
 /**
- * Confirms transaction with timeout handling
+ * Awaits cluster confirmation for a transaction. Once confirmation resolves
+ * (either as success or failure), this aborts the shared `AbortController`
+ * so the paired sender loop can stop retrying.
+ *
+ * Confirmation itself is bounded by blockhash expiry — `confirmTransaction`
+ * resolves with `value.err === null` on success, with a non-null `err` if
+ * the transaction landed but failed, and rejects if the blockhash expires
+ * before the transaction is observed.
+ *
+ * @param connection           Solana RPC connection.
+ * @param signature            bs58-encoded signature to wait on.
+ * @param blockhash            Blockhash used to sign the transaction.
+ * @param lastValidBlockHeight Same value used in sending; bounds the wait.
+ * @param abortController      Shared controller — aborted on completion so
+ *                             the sender loop exits.
+ * @param options              Forwarded for `commitment`.
+ * @throws When the cluster reports a transaction-level error
+ *         (`response.value.err !== null`).
  */
 export async function confirmTransactionWithTimeout(
 	connection: web3.Connection,
@@ -575,6 +688,47 @@ export async function confirmTransactionWithTimeout(
 	abortController.abort();
 }
 
+/**
+ * Parameters for {@link sendAndConfirm}.
+ */
+export interface SendAndConfirmParams {
+	/** Solana RPC connection used for both sending and confirming. */
+	connection: web3.Connection;
+	/**
+	 * Already-signed transaction. Must carry at least one non-zero signature;
+	 * otherwise {@link sendAndConfirm} throws `TransactionNotSigned`.
+	 */
+	signedTransaction: web3.Transaction | web3.VersionedTransaction;
+	/** Blockhash used to sign the transaction. */
+	blockhash: string;
+	/** Block height after which the blockhash is no longer valid. */
+	lastValidBlockHeight: number;
+	/** Retry / commitment / priority-fee tuning. */
+	options?: TransactionExecutionOptions;
+	/**
+	 * Optional caller-supplied controller — useful when an outer flow needs
+	 * to cancel send+confirm together (e.g. an orchestrator timing out). If
+	 * omitted, a fresh controller is created internally.
+	 */
+	abortController?: AbortController;
+}
+
+/**
+ * Sends a signed transaction and waits for confirmation, coordinating the
+ * sender retry loop and the confirmation listener through a shared
+ * `AbortController` so whichever side finishes first stops the other.
+ *
+ * Flow:
+ *   1. Extract the first signature from the transaction (fail fast if
+ *      missing — `addSignature` must have been called before getting here).
+ *   2. Launch `sendTransactionWithRetry` and `confirmTransactionWithTimeout`
+ *      in parallel via `Promise.all`. Both observe the same abort signal.
+ *   3. Either branch's rejection aborts the controller and propagates out.
+ *
+ * @returns The bs58-encoded transaction signature on confirmation.
+ * @throws `TransactionNotSigned` when no usable signature is present.
+ * @throws Any error surfaced by the send loop or confirmation listener.
+ */
 export async function sendAndConfirm({
 	blockhash,
 	connection,
@@ -582,14 +736,7 @@ export async function sendAndConfirm({
 	signedTransaction,
 	abortController,
 	options,
-}: {
-	connection: web3.Connection;
-	signedTransaction: web3.Transaction | web3.VersionedTransaction;
-	blockhash: string;
-	lastValidBlockHeight: number;
-	options?: TransactionExecutionOptions;
-	abortController?: AbortController;
-}) {
+}: SendAndConfirmParams): Promise<string> {
 	const signatureBuffer =
 		signedTransaction instanceof web3.VersionedTransaction
 			? signedTransaction.signatures[0]
