@@ -1,3 +1,4 @@
+import assert from "node:assert";
 import { web3 } from "@coral-xyz/anchor";
 import { describe, it } from "mocha";
 import { TransactionPayload } from "../src";
@@ -12,7 +13,7 @@ const walletB = wallets[1];
 console.log("walletB:", walletB.publicKey.toString());
 
 describe("TransactionPayload", () => {
-	it.skip("should return 0x1 error upon 0 SOL balance", async () => {
+	it("should return 0x1 error upon 0 SOL balance", async () => {
 		const fromKeypair = web3.Keypair.generate();
 		const toKeypair = web3.Keypair.generate();
 
@@ -41,8 +42,13 @@ describe("TransactionPayload", () => {
 			},
 		);
 
-		const signature = await payload.execute({ commitment: "confirmed" });
-		console.log("signature:", signature);
+		await assert.rejects(
+			async () => {
+				await payload.execute({ commitment: "confirmed" });
+			},
+			(err: Error) =>
+				/An account does not have enough SOL for transaction/.test(err.message),
+		);
 	});
 
 	it("should make transaction", async () => {
