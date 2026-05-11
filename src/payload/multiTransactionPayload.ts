@@ -358,7 +358,7 @@ export class MultiTransactionPayload {
 		const promises = signedTransactions.map(async (signedTransaction) => {
 			try {
 				const abortController = new AbortController();
-				const signature = sendAndConfirm({
+				const signature = await sendAndConfirm({
 					blockhash,
 					connection: this._connection,
 					lastValidBlockHeight,

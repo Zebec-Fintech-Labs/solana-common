@@ -261,7 +261,7 @@ export class TransactionPayload {
 
 			const abortController = new AbortController();
 
-			const signature = sendAndConfirm({
+			const signature = await sendAndConfirm({
 				blockhash,
 				connection: this._connection,
 				lastValidBlockHeight,
@@ -269,7 +269,6 @@ export class TransactionPayload {
 				options,
 				abortController,
 			});
-
 			return signature;
 		} catch (err) {
 			throw parseSolanaSendTransactionError(err, this._errors);
