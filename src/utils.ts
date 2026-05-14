@@ -297,16 +297,16 @@ export function parseSolanaSendTransactionError(
 function parseProgramError(translatedError: ProgramError) {
 	return new Error(
 		`Program ` +
-			`${translatedError.program ? `${translatedError.program.toString()} ` : ""}` +
-			`failed: Code: ${translatedError.code} Message: ${translatedError.msg}`,
+		`${translatedError.program ? `${translatedError.program.toString()} ` : ""}` +
+		`failed: Code: ${translatedError.code} Message: ${translatedError.msg}`,
 	);
 }
 
 function parseAnchorError(translatedError: AnchorError) {
 	return new Error(
 		`Program: ${translatedError.program.toString()} failed. Code: ${translatedError.error.errorCode.code} Number: ${translatedError.error.errorCode.number} Message: ${translatedError.error.errorMessage}` +
-			`${translatedError.error.origin ? ` Origin: ${typeof translatedError.error.origin === "string" ? translatedError.error.origin : `${translatedError.error.origin.file}:${translatedError.error.origin.line}`}` : ""}` +
-			`${translatedError.error.comparedValues ? ` Compared Values: Left ${translatedError.error.comparedValues[0]?.toString()} Right ${translatedError.error.comparedValues[1]?.toString()}` : ""}`,
+		`${translatedError.error.origin ? ` Origin: ${typeof translatedError.error.origin === "string" ? translatedError.error.origin : `${translatedError.error.origin.file}:${translatedError.error.origin.line}`}` : ""}` +
+		`${translatedError.error.comparedValues ? ` Compared Values: Left ${translatedError.error.comparedValues[0]?.toString()} Right ${translatedError.error.comparedValues[1]?.toString()}` : ""}`,
 	);
 }
 
@@ -488,15 +488,15 @@ export async function getRecentPriorityFee(
 			medianFee =
 				sortedNonZeroList.length % 2 !== 0
 					? BigNumber(
-							// biome-ignore lint/style/noNonNullAssertion: mid index is calculated based on length
-							sortedNonZeroList[midIndex]!.prioritizationFee,
-						).decimalPlaces(0, BigNumber.ROUND_FLOOR)
+						// biome-ignore lint/style/noNonNullAssertion: mid index is calculated based on length
+						sortedNonZeroList[midIndex]!.prioritizationFee,
+					).decimalPlaces(0, BigNumber.ROUND_FLOOR)
 					: // biome-ignore lint/style/noNonNullAssertion: mid index is calculated based on length
-						BigNumber(sortedNonZeroList[midIndex - 1]!.prioritizationFee)
-							// biome-ignore lint/style/noNonNullAssertion: mid index is calculated based on length
-							.plus(sortedNonZeroList[midIndex]!.prioritizationFee)
-							.div(2)
-							.decimalPlaces(0, BigNumber.ROUND_FLOOR);
+					BigNumber(sortedNonZeroList[midIndex - 1]!.prioritizationFee)
+						// biome-ignore lint/style/noNonNullAssertion: mid index is calculated based on length
+						.plus(sortedNonZeroList[midIndex]!.prioritizationFee)
+						.div(2)
+						.decimalPlaces(0, BigNumber.ROUND_FLOOR);
 		}
 
 		// console.debug(
