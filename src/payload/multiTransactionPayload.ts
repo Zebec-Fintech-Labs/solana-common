@@ -406,12 +406,10 @@ export class MultiTransactionPayload {
 		const enablePriorityFee = options?.enablePriorityFee ?? true;
 
 		if (enablePriorityFee) {
-			// Simulation runs with `sigVerify: true` so the cluster rejects
-			// the batch early if any signature is bad — cheaper than learning
-			// that at send time.
+			// Simulation runs with `sigVerify: false`
 			const simulationResults = await this.simulate({
 				...options,
-				sigVerify: true,
+				sigVerify: false,
 			});
 			await Promise.all(
 				this.transactionsData.map(async (data, i) => {
