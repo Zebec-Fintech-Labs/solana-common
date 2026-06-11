@@ -220,17 +220,17 @@ export class MultiTransactionPayload {
 			if (simulationErrors.length) {
 				throw new MultiTransactionSimulationError(
 					"One or more simulation failed:\n" +
-					JSON.stringify(
-						simulationErrors.map((e) => ({
-							index: e.index,
-							error:
-								e.error instanceof Error
-									? e.error.message
-									: JSON.stringify(e.error, null, 2),
-						})),
-						null,
-						2,
-					),
+						JSON.stringify(
+							simulationErrors.map((e) => ({
+								index: e.index,
+								error:
+									e.error instanceof Error
+										? e.error.message
+										: JSON.stringify(e.error, null, 2),
+							})),
+							null,
+							2,
+						),
 					simulationErrors,
 				);
 			}
@@ -295,14 +295,14 @@ export class MultiTransactionPayload {
 			(instruction) =>
 				instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
 				web3.ComputeBudgetInstruction.decodeInstructionType(instruction) ===
-				"SetComputeUnitLimit",
+					"SetComputeUnitLimit",
 		);
 
 		const hasComputeUnitPriceInstruction = instructions.some(
 			(instruction) =>
 				instruction.programId.equals(web3.ComputeBudgetProgram.programId) &&
 				web3.ComputeBudgetInstruction.decodeInstructionType(instruction) ===
-				"SetComputeUnitPrice",
+					"SetComputeUnitPrice",
 		);
 
 		if (!hasComputeUnitLimitInstruction) {
@@ -418,10 +418,10 @@ export class MultiTransactionPayload {
 					// safety margin. Under-provisioning kills the whole tx.
 					const computeUnit = simulationResult?.value.unitsConsumed
 						? Math.floor(
-							(simulationResult.value.unitsConsumed +
-								COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT) *
-							2,
-						)
+								(simulationResult.value.unitsConsumed +
+									COMPUTE_BUDGET_PROGRAM_COMPUTE_UNIT) *
+									2,
+							)
 						: MAX_COMPUTE_UNIT;
 
 					await this.addPriorityFeeInstructions(
@@ -447,7 +447,6 @@ export class MultiTransactionPayload {
 		const promises = signedTransactions.map(async (signedTransaction) => {
 			try {
 				const abortController = new AbortController();
-
 
 				const signature = await sendAndConfirm({
 					blockhash,
@@ -477,7 +476,9 @@ export class MultiTransactionPayload {
 			return {
 				...result,
 				// biome-ignore lint/style/noNonNullAssertion: length checks ensure these are not null and for signature access the signTransaction ensures at least one signature exists
-				signature: utils.bytes.bs58.encode(signedTransactions[i]!.signatures[0]!),
+				signature: utils.bytes.bs58.encode(
+					signedTransactions[i]!.signatures[0]!,
+				),
 				// biome-ignore lint/style/noNonNullAssertion: length checks ensure these are not null
 				transactionData: this.transactionsData[i]!,
 				// biome-ignore lint/style/noNonNullAssertion: length checks ensure these are not null
