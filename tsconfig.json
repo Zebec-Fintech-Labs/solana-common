@@ -85,7 +85,8 @@
 		// "rootDirs": [],                                   /* Allow multiple folders to be treated as one when resolving modules. */
 		// "typeRoots": [],                                  /* Specify multiple folders that act like './node_modules/@types'. */
 		"types": [
-			"@types/node"
+			"node",
+			"mocha"
 		] /* Specify type package names to be included without being referenced in a source file. */
 		// "allowUmdGlobalAccess": true,                     /* Allow accessing UMD globals from modules. */
 		// "moduleSuffixes": [],                             /* List of file name suffixes to search when resolving a module. */
@@ -104,6 +105,11 @@
 		// "maxNodeModuleJsDepth": 1,                        /* Specify the maximum folder depth used for checking JavaScript files from 'node_modules'. Only applicable with 'allowJs'. */
 		/* Emit */
 	},
-	"exclude": ["node_modules", "test"],
-	"include": ["src"]
+	"exclude": [
+		"node_modules",
+		"test"
+	],
+	"include": [
+		"src"
+	]
 }
